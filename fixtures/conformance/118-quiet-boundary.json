@@ -1,0 +1,27 @@
+{
+  "case": 118,
+  "requirement": "22.1",
+  "title": "Human H mentions A at 23:00:00, when quiet hours start, and again at 07:00:00, when they end",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {"A": "anyone"}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T23:00:00Z",
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "steps": [
+    {"now": "2026-10-05T23:00:00Z",
+     "event": {"label": "h1", "author": "H", "kind": 9, "content": "@A are you around?"},
+     "expect": {
+       "control": null,
+       "decisions": [{"suppress": {"bot": "A", "why": "quiet"}}],
+       "thread_update": {}
+     }},
+    {"now": "2026-10-06T07:00:00Z",
+     "event": {"label": "h2", "author": "H", "kind": 9, "content": "@A are you around?"},
+     "expect": {
+       "control": null,
+       "decisions": [{"wake": {"bot": "A", "reason": "mention", "priority": "human", "debounce": false}}],
+       "thread_update": {}
+     }}
+  ]
+}

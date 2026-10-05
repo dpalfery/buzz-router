@@ -1,11 +1,19 @@
 //! The routing types and the `route` function (design section 5.2, requirement 5).
 //!
-//! `route` is pure. It does no I/O and reads no clock except its `now` argument. It routes owner
-//! and roster-bot kind-9 messages by the rules of design section 5.5; every other event gets the
-//! empty result for now.
+//! `route` is pure. It does no I/O and reads no clock except its `now` argument. It routes an
+//! event by the rules of design section 5.5, by kind and author class:
+//!
+//! - an event tagged as a router status note wakes nobody, whoever wrote it (requirement 4.5);
+//! - the owner's kind-9 message: `owner` (the owner rules, requirements 6 to 10);
+//! - a roster bot's kind-9 message: `bot` (requirements 11 to 13);
+//! - a human's or a foreign bot's kind-9 message: `human` (requirements 14 and 15);
+//! - the owner's kind-40003 edit: `edit` (requirement 16). An edit from anyone else, and any
+//!   other kind, gets the empty result (requirement 16.5).
 
 mod bot;
+mod edit;
 mod gates;
+mod human;
 mod owner;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -14,9 +22,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::classify::{classify, AuthorClass};
-use crate::config::{ChannelScope, Roster};
+use crate::config::{Bot, ChannelScope, Roster};
 use crate::ids::{BotName, ChannelId, EventId, Pubkey};
-use crate::thread::{RoundMode, ThreadState};
+use crate::thread::{RoundMode, ThreadPos, ThreadState};
 
 /// The kind of a Buzz stream message (9).
 pub const KIND_MESSAGE: u16 = buzz_core::kind::KIND_STREAM_MESSAGE as u16;
@@ -240,19 +248,47 @@ pub enum Diagnostic {
     },
     /// The event is tagged as a router status note and wakes nobody (requirement 4.5).
     StatusTagIgnored,
+    /// An owner edit arrived without the message it edits or that message's thread, so it wakes
+    /// nobody (design 5.5, `owner_edit`, step 1).
+    EditTargetUnknown,
 }
 
 /// Decides what to do about one event.
 ///
-/// An owner's kind-9 message and a roster bot's kind-9 message are routed by the rules of design
-/// 5.5. Every other event gets the empty result: no decisions and no thread changes, in `Direct`
+/// An event tagged `["buzz-router", version, "status"]` gets the empty result and a
+/// [`Diagnostic::StatusTagIgnored`], whatever its author or content (requirement 4.5). Otherwise
+/// the event is routed by the rules of design 5.5, by kind and author class. Every event those
+/// rules do not cover gets the empty result: no decisions and no thread changes, in `Direct`
 /// mode.
 pub fn route(ev: &InEvent, snap: &Snapshot<'_>, _now: DateTime<Utc>) -> RouteResult {
+    if has_status_tag(ev) {
+        return RouteResult {
+            diagnostics: vec![Diagnostic::StatusTagIgnored],
+            ..empty_result()
+        };
+    }
     match (ev.kind, classify(ev, snap.roster)) {
+        (KIND_EDIT, AuthorClass::Owner) => edit::owner_edit(ev, snap),
+        (KIND_EDIT, _) => empty_result(),
         (KIND_MESSAGE, AuthorClass::Owner) => owner::owner_message(ev, snap),
         (KIND_MESSAGE, AuthorClass::Bot(author)) => bot::bot_message(ev, snap, &author),
+        (KIND_MESSAGE, AuthorClass::Human) => human::human_message(ev, snap),
+        (KIND_MESSAGE, AuthorClass::ForeignBot { owner_is_ours }) => {
+            human::foreign_message(ev, snap, owner_is_ours)
+        }
         _ => empty_result(),
     }
+}
+
+/// Whether `ev` carries the tag `["buzz-router", <version>, "status"]` that the router puts on
+/// its own status notes (requirement 4.5, design 5.5).
+fn has_status_tag(ev: &InEvent) -> bool {
+    ev.tags.iter().any(|tag| {
+        matches!(
+            tag.as_slice(),
+            [name, _version, kind] if name == "buzz-router" && kind == "status"
+        )
+    })
 }
 
 /// The result for an event that wakes nobody and changes nothing.
@@ -294,4 +330,21 @@ fn covers(bot: &BotName, channel: ChannelId, snap: &Snapshot<'_>) -> bool {
 /// covers the channel (requirements 5.7 and 5.8). Only considered bots get decisions.
 fn consider(bot: &BotName, channel: ChannelId, snap: &Snapshot<'_>) -> bool {
     snap.local_bots.contains(bot) && covers(bot, channel, snap)
+}
+
+/// The roster bot a message addresses by replying to its message: the reply-target rule of
+/// design 5.5 (requirements 8.1, 8.2 and 14.1).
+///
+/// An event that is not a reply, and a reply whose parent is the thread root, have none: a reply
+/// to the root is a reply to the thread, not to a bot. Otherwise it is the roster bot whose key
+/// the snapshot gives as the parent's author.
+fn reply_target<'r>(pos: &ThreadPos, snap: &Snapshot<'r>) -> Option<&'r Bot> {
+    let ThreadPos::Reply { root, parent } = pos else {
+        return None;
+    };
+    if parent == root {
+        return None;
+    }
+    let author = snap.parent_author.as_ref()?;
+    snap.roster.bots.values().find(|bot| bot.pubkey == *author)
 }

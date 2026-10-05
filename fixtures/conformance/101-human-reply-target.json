@@ -1,0 +1,22 @@
+{
+  "case": 101,
+  "requirement": "14.3",
+  "title": "Human H replies to B's message, untagged, and B answers anyone",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {"B": "anyone"}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "thread": {"root": "t", "participants": ["B"], "discussion": false,
+             "round_id": "t", "round_mode": "direct", "turns_used": {"B": 1}},
+  "parent_author": "B",
+  "event": {"label": "h1", "author": "H", "kind": 9, "content": "what about this?",
+            "reply": {"root": "t", "parent": "b1"}, "p": ["H"]},
+  "expect": {
+    "control": null,
+    "decisions": [{"wake": {"bot": "B", "reason": "reply_target", "priority": "human", "debounce": false}}],
+    "thread_update": {}
+  }
+}

@@ -19,5 +19,6 @@ mod text;
 
 pub use control::parse_control;
 pub use everyone::contains_everyone;
+pub(crate) use mentions::p_tag_bots;
 pub use mentions::{mentioned_bots, mentions_for_reply};
 pub use text::mention_text;

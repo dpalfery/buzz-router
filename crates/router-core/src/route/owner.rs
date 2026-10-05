@@ -17,11 +17,10 @@ use std::collections::BTreeSet;
 
 use super::gates::gate;
 use super::{
-    consider, covers, empty_result, Decision, InEvent, NewRound, NewThread, Priority, Reason,
-    RouteResult, Snapshot, SuppressWhy, ThreadUpdate,
+    consider, covers, empty_result, reply_target, Decision, InEvent, NewRound, NewThread, Priority,
+    Reason, RouteResult, Snapshot, SuppressWhy, ThreadUpdate,
 };
 use crate::classify::AuthorClass;
-use crate::config::Bot;
 use crate::ids::BotName;
 use crate::parse::{contains_everyone, mention_text, mentioned_bots};
 use crate::thread::{thread_position, RoundMode, ThreadPos};
@@ -140,15 +139,11 @@ fn pick_targets(
     }
 
     // (c) a reply to a roster bot's message. A reply to the root is not one (requirement 8.2).
-    if let ThreadPos::Reply { root, parent } = pos {
-        if parent != root {
-            if let Some(bot) = parent_author_bot(snap) {
-                return Some(Targets::direct(
-                    BTreeSet::from([bot.name.clone()]),
-                    Reason::ReplyTarget,
-                ));
-            }
-        }
+    if let Some(bot) = reply_target(pos, snap) {
+        return Some(Targets::direct(
+            BTreeSet::from([bot.name.clone()]),
+            Reason::ReplyTarget,
+        ));
     }
 
     // (d) a reply in a thread with participants. A thread the router has no state for has none
@@ -185,11 +180,4 @@ fn pick_targets(
         BTreeSet::from([default_bot.clone()]),
         Reason::DefaultBot,
     ))
-}
-
-/// The roster bot that wrote the message this event replies to, if the parent is not the root's
-/// and the snapshot says a roster bot wrote it.
-fn parent_author_bot<'r>(snap: &Snapshot<'r>) -> Option<&'r Bot> {
-    let author = snap.parent_author.as_ref()?;
-    snap.roster.bots.values().find(|bot| bot.pubkey == *author)
 }

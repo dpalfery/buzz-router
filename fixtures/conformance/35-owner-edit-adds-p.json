@@ -1,0 +1,22 @@
+{
+  "case": 35,
+  "requirement": "16.8",
+  "title": "O edits a message to add a p tag for B; the edit's text names C, which is not read",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "thread": {"root": "o1", "participants": ["A"], "discussion": false,
+             "round_id": "o1", "round_mode": "direct", "turns_used": {"A": 1}},
+  "edit_target": {"message": "o1"},
+  "event": {"label": "e1", "author": "O", "kind": 40003, "content": "@A status? @C is not asked.", "p": ["B"]},
+  "expect": {
+    "control": null,
+    "decisions": [{"wake": {"bot": "B", "reason": "mention", "priority": "owner", "debounce": false}}],
+    "thread_update": {"add_participants": ["B"]},
+    "wake_mode": "direct"
+  }
+}

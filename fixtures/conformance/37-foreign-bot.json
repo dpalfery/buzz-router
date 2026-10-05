@@ -1,0 +1,19 @@
+{
+  "case": 37,
+  "requirement": "15.3",
+  "title": "Foreign bot F (valid NIP-OA, not in the roster) mentions A, which answers anyone",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {"A": "anyone"}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "event": {"label": "f1", "author": "F", "kind": 9, "content": "@A hi", "auth": {"owner": "X"}},
+  "expect": {
+    "control": null,
+    "decisions": [{"suppress": {"bot": "A", "why": "respond_to"}}],
+    "thread_update": {},
+    "diagnostics": []
+  }
+}

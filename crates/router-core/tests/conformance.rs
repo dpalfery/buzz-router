@@ -1,5 +1,8 @@
 //! Task 1.6 (RED): the routing conformance harness (design section 16.1, requirement 64).
 //! Task 1.7 (RED) registers the bot-message fixtures and adds one format key, `roster.channels`.
+//! Task 1.8 (RED) registers the human, foreign-bot, edit and status-tag fixtures and adds four
+//! format changes: `edit_target`, `event.tags`, `expect.diagnostics`, and a `quiet` that may be
+//! omitted.
 //!
 //! Every `*.json` file under `fixtures/conformance/` is one case: a roster, a snapshot, one event
 //! (or a list of steps) and the expected result. The harness loads it, builds the roster and the
@@ -22,11 +25,19 @@
 //! - `local_bots`, `members`: the snapshot's `local_bots` and `local_members`.
 //! - `now`: the time `route` is called with.
 //! - `quiet`, `halts`, `wake_counts`: the snapshot's `quiet` set, `halts` and `wake_counts`
-//!   (a map from bot to `{"hour", "day"}`). All three may be omitted for "none".
-//! - `thread`, `parent_author`: the snapshot's thread (`root`, `participants`, `discussion`,
-//!   `round_id`, `round_mode`, `turns_used`) and the author of the reply parent. Both optional.
-//! - `event`: `{"label", "author", "kind", "content", "reply"?, "p"?, "auth"?}`.
-//! - `expect`: `{"control"?, "decisions", "thread_update"?, "wake_mode"?}`.
+//!   (a map from bot to `{"hour", "day"}`). `halts` and `wake_counts` may be omitted for "none".
+//!   An explicit `quiet` is used as written, for every step. When `quiet` is omitted, the harness
+//!   derives it for each step the way the engine does, with `router_core::quiet::quiet_set` over
+//!   the roster and that step's `now` (task 1.8, extra 118).
+//! - `thread`, `parent_author`, `edit_target`: the snapshot's thread (`root`, `participants`,
+//!   `discussion`, `round_id`, `round_mode`, `turns_used`), the author of the reply parent, and
+//!   the message an edit edits, `{"message": LABEL}`. All three optional. `edit_target` is not in
+//!   the 16.1 example; the edit fixtures need it (task 1.8).
+//! - `event`: `{"label", "author", "kind", "content", "reply"?, "p"?, "auth"?, "tags"?}`. `tags`
+//!   is a list of raw tag arrays appended after the others; it is how a fixture writes the status
+//!   tag `["buzz-router", "0.1.0", "status"]` (design 5.5, requirement 4.5), and is not in the
+//!   16.1 example.
+//! - `expect`: `{"control"?, "decisions", "thread_update"?, "wake_mode"?, "diagnostics"?}`.
 //! - `steps`: instead of `event` and `expect`, a list of `{"now"?, "event", "expect"}`.
 //!
 //! # Symbolic identities
@@ -48,8 +59,10 @@
 //! `control` and `decisions` are always compared, exactly: an absent or `null` `control` means
 //! the result has none, and `decisions` lists every decision in the order `route` returns them
 //! (sorted by bot name). `thread_update` and `wake_mode` are compared exactly when present and
-//! skipped when absent. Inside `thread_update`, an omitted part means none of it: no `create`, no
-//! `add_participants`, `set_discussion` false, no `new_round`.
+//! skipped when absent, and so is `diagnostics` (it is not in the 16.1 example either; task 1.8
+//! adds it): when present it lists every `Diagnostic` `route` returns, in order. Inside
+//! `thread_update`, an omitted part means none of it: no `create`, no `add_participants`,
+//! `set_discussion` false, no `new_round`.
 //!
 //! The JSON shapes follow what `#[derive(Deserialize)]` with `rename_all = "snake_case"` would give
 //! the router types, as the `wake` example in 16.1 shows:
@@ -60,7 +73,9 @@
 //!   `"all"` or `{"bots": ["A"]}`;
 //! - `thread_update.create` is `{"root": LABEL}` (the channel is always `room`), and
 //!   `thread_update.new_round` is `{"round_id": LABEL, "mode": "direct" | "discussion"}`; its
-//!   `started_at` is the event's `created_at`.
+//!   `started_at` is the event's `created_at`;
+//! - a diagnostic is `"status_tag_ignored"` or `{"roster_drift": {"pubkey": NAME}}`, where `NAME`
+//!   is the symbolic name of the foreign bot's key.
 //!
 //! # Steps
 //!
@@ -68,9 +83,10 @@
 //! the harness applies that step's `thread_update` (creating the thread, adding participants,
 //! setting `discussion`, and starting a round, which resets `turns_used`) and adds one turn to
 //! `turns_used` for every `Wake`, as if it had been dispatched. A step's `now` overrides the
-//! fixture's. The snapshot's `thread` for a reply is the thread with the reply's `root`; a
-//! top-level event has none. `parent_author`, `quiet`, `halts` and `wake_counts` do not change
-//! between steps.
+//! fixture's. The snapshot's `thread` for a reply is the thread with the reply's `root`; the
+//! snapshot's `thread` for an edit (kind 40003) is the thread the fixture's `thread` names (the
+//! edited message's thread); any other top-level event has none. `parent_author`, `edit_target`,
+//! an explicit `quiet`, `halts` and `wake_counts` do not change between steps.
 //!
 //! # Types without serde
 //!
@@ -98,9 +114,11 @@ use common::{auth_tag, channel, h_tag, keys, p_tag, pubkey, pubkey_of, reply_tag
 use common::{roster_full, RosterBot};
 use router_core::config::Roster;
 use router_core::ids::{BotName, EventId};
+use router_core::quiet::quiet_set;
 use router_core::route::{
-    route, Control, Decision, Halts, InEvent, NewRound, NewThread, Priority, Reason, RouteResult,
-    Scope, Snapshot, SuppressWhy, ThreadUpdate, WakeCounts,
+    route, Control, Decision, Diagnostic, EditTarget, Halts, InEvent, NewRound, NewThread,
+    Priority, Reason, RouteResult, Scope, Snapshot, SuppressWhy, ThreadUpdate, WakeCounts,
+    KIND_EDIT,
 };
 use router_core::thread::{RoundMode, ThreadState};
 use serde::Deserialize;
@@ -120,14 +138,16 @@ struct Fixture {
     local_bots: BTreeSet<BotName>,
     members: BTreeSet<BotName>,
     now: DateTime<Utc>,
-    #[serde(default)]
-    quiet: BTreeSet<BotName>,
+    /// The snapshot's `quiet` set. Omitted: derived from each step's `now` with `quiet_set`.
+    quiet: Option<BTreeSet<BotName>>,
     #[serde(default)]
     halts: HaltsSpec,
     #[serde(default)]
     wake_counts: BTreeMap<BotName, WakeCountsSpec>,
     thread: Option<ThreadSpec>,
     parent_author: Option<String>,
+    /// The message an edit event edits. Not in the 16.1 example; the edit fixtures need it.
+    edit_target: Option<EditTargetSpec>,
     event: Option<EventSpec>,
     expect: Option<ExpectSpec>,
     steps: Option<Vec<StepSpec>>,
@@ -210,6 +230,13 @@ impl From<RoundModeSpec> for RoundMode {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct EditTargetSpec {
+    /// The label of the edited kind-9 message.
+    message: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct EventSpec {
     label: String,
     author: String,
@@ -219,6 +246,10 @@ struct EventSpec {
     #[serde(default)]
     p: Vec<String>,
     auth: Option<AuthSpec>,
+    /// Raw tag arrays appended after the `h`, `e`, `p` and `auth` tags. Not in the 16.1 example;
+    /// the status-tag fixture (case 28) needs it.
+    #[serde(default)]
+    tags: Vec<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -249,6 +280,8 @@ struct ExpectSpec {
     decisions: Vec<DecisionSpec>,
     thread_update: Option<ThreadUpdateSpec>,
     wake_mode: Option<RoundModeSpec>,
+    /// Not in the 16.1 example. When present, `route`'s diagnostics must equal it exactly.
+    diagnostics: Option<Vec<DiagnosticSpec>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -340,6 +373,25 @@ impl From<SuppressWhySpec> for SuppressWhy {
             SuppressWhySpec::Quiet => Self::Quiet,
             SuppressWhySpec::Budget => Self::Budget,
             SuppressWhySpec::RespondTo => Self::RespondTo,
+        }
+    }
+}
+
+/// A `Diagnostic`. The foreign bot's key is a symbolic name, like every identity in a fixture.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+enum DiagnosticSpec {
+    RosterDrift { pubkey: String },
+    StatusTagIgnored,
+}
+
+impl From<DiagnosticSpec> for Diagnostic {
+    fn from(diagnostic: DiagnosticSpec) -> Self {
+        match diagnostic {
+            DiagnosticSpec::RosterDrift { pubkey: name } => Self::RosterDrift {
+                pubkey: pubkey(&name),
+            },
+            DiagnosticSpec::StatusTagIgnored => Self::StatusTagIgnored,
         }
     }
 }
@@ -449,6 +501,7 @@ fn build_event(spec: &EventSpec, now: DateTime<Utc>) -> InEvent {
     if let Some(auth) = &spec.auth {
         tags.push(auth_tag(&keys(&auth.owner), &author, ""));
     }
+    tags.extend(spec.tags.iter().cloned());
     InEvent {
         id: label_id(&spec.label),
         pubkey: pubkey_of(&author),
@@ -615,6 +668,9 @@ fn run_fixture(test: &str, file: &str) {
         })
         .collect();
     let parent_author = fixture.parent_author.as_deref().map(pubkey);
+    let edit_target = fixture.edit_target.as_ref().map(|target| EditTarget {
+        message_id: label_id(&target.message),
+    });
     let mut threads: BTreeMap<EventId, ThreadState> = BTreeMap::new();
     if let Some(spec) = &fixture.thread {
         let thread = build_thread(spec, fixture.now);
@@ -635,15 +691,17 @@ fn run_fixture(test: &str, file: &str) {
             format!("{file} (case {}: {})", fixture.case, fixture.title)
         };
         let ev = build_event(&event, now);
-        // A reply belongs to the thread of its root; a top-level event has no thread yet.
-        let root = event
-            .reply
-            .as_ref()
-            .map_or_else(|| ev.id.clone(), |reply| label_id(&reply.root));
-        let thread = event
-            .reply
-            .as_ref()
-            .and_then(|_| threads.get(&root).cloned());
+        // A reply belongs to the thread of its root and an edit to the thread of the message it
+        // edits, which the fixture's `thread` names. Any other top-level event has no thread yet.
+        let is_edit = event.kind == KIND_EDIT;
+        let root = match (&event.reply, &fixture.thread) {
+            (Some(reply), _) => label_id(&reply.root),
+            (None, Some(thread)) if is_edit => label_id(&thread.root),
+            (None, _) => ev.id.clone(),
+        };
+        let thread = (event.reply.is_some() || is_edit)
+            .then(|| threads.get(&root).cloned())
+            .flatten();
         let snap = Snapshot {
             roster: &roster,
             local_bots: &fixture.local_bots,
@@ -651,9 +709,12 @@ fn run_fixture(test: &str, file: &str) {
             halts: &halts,
             thread,
             parent_author: parent_author.clone(),
-            edit_target: None,
+            edit_target: edit_target.clone(),
             wake_counts: &wake_counts,
-            quiet: fixture.quiet.clone(),
+            quiet: fixture
+                .quiet
+                .clone()
+                .unwrap_or_else(|| quiet_set(&roster, now)),
         };
 
         let result = route(&ev, &snap, now);
@@ -678,6 +739,14 @@ fn run_fixture(test: &str, file: &str) {
                 result.wake_mode,
                 RoundMode::from(wake_mode),
                 "{context}: wake_mode"
+            );
+        }
+        if let Some(diagnostics) = expect.diagnostics {
+            let expected_diagnostics: Vec<Diagnostic> =
+                diagnostics.into_iter().map(Diagnostic::from).collect();
+            assert_eq!(
+                result.diagnostics, expected_diagnostics,
+                "{context}: diagnostics"
             );
         }
 
@@ -722,21 +791,39 @@ conformance_case! {
     case_14 => "14-bot-p-tag-ignored.json",
     case_15 => "15-bot-everyone-plain.json",
     case_16 => "16-bot-only-thread-cap.json",
+    case_23 => "23-halted-owner-mention.json",
     case_24 => "24-quiet-hours-bot-caused.json",
+    case_25 => "25-quiet-owner-mention.json",
+    case_26 => "26-budget-owner-mention.json",
     case_27 => "27-budget-bot-caused.json",
+    case_28 => "28-status-tag.json",
+    case_29 => "29-human-owner-only.json",
+    case_30 => "30-human-anyone.json",
     case_31 => "31-thread-without-participants.json",
     case_32 => "32-mention-inside-code.json",
     case_33 => "33-quoted-everyone.json",
     case_34 => "34-longest-name.json",
+    case_35 => "35-owner-edit-adds-p.json",
     case_36 => "36-self-p-tag-ignored.json",
+    case_37 => "37-foreign-bot.json",
+    case_101 => "101-human-reply-target.json",
+    case_102 => "102-human-mention-beats-reply.json",
     case_103 => "103-mention-and-discussion-single-decision.json",
+    case_104 => "104-edit-over-cap.json",
+    case_105 => "105-edit-ignores-quiet-budget.json",
     case_106 => "106-nprofile-mention.json",
     case_107 => "107-npub-mention.json",
     case_108 => "108-alias-mention.json",
     case_109 => "109-outside-channels-list.json",
+    case_110 => "110-halted-owner-only-respond-to.json",
     case_111 => "111-everyone-with-mention.json",
+    case_112 => "112-non-owner-edit-ignored.json",
     case_115 => "115-default-bot-empty-thread.json",
+    case_116 => "116-foreign-roster-drift.json",
+    case_117 => "117-human-everyone-plain.json",
+    case_118 => "118-quiet-boundary.json",
     case_119 => "119-daily-budget-bot-caused.json",
+    case_120 => "120-daily-budget-owner-not-blocked.json",
 }
 
 #[test]

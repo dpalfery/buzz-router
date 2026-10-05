@@ -143,7 +143,7 @@ fn uri_mentioned_bots(text: &str, roster: &Roster) -> BTreeSet<BotName> {
 
 /// The bots named by the `p` tags of `ev`, without the tag that carries the author's own key
 /// (requirement 17.4). The caller decides whether the author's class lets `p` tags count.
-fn p_tag_bots(ev: &InEvent, roster: &Roster) -> BTreeSet<BotName> {
+pub(crate) fn p_tag_bots(ev: &InEvent, roster: &Roster) -> BTreeSet<BotName> {
     ev.tags
         .iter()
         .filter_map(|tag| match tag.as_slice() {
