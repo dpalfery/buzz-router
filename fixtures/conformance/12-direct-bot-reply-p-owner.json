@@ -1,0 +1,22 @@
+{
+  "case": 12,
+  "requirement": "12.7",
+  "title": "A replies in a Direct round that O started with @A, tagging O with a p tag",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "thread": {"root": "t", "participants": ["A"], "discussion": false,
+             "round_id": "t", "round_mode": "direct", "turns_used": {"A": 1}},
+  "event": {"label": "a1", "author": "A", "kind": 9, "content": "Status: all green.",
+            "reply": {"root": "t", "parent": "t"}, "p": ["O"]},
+  "expect": {
+    "control": null,
+    "decisions": [],
+    "thread_update": {"add_participants": ["A"]},
+    "wake_mode": "direct"
+  }
+}

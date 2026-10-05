@@ -1,9 +1,10 @@
 //! The routing types and the `route` function (design section 5.2, requirement 5).
 //!
 //! `route` is pure. It does no I/O and reads no clock except its `now` argument. It routes owner
-//! kind-9 messages by the rules of design section 5.5; every other event gets the empty result for
-//! now.
+//! and roster-bot kind-9 messages by the rules of design section 5.5; every other event gets the
+//! empty result for now.
 
+mod bot;
 mod gates;
 mod owner;
 
@@ -243,11 +244,13 @@ pub enum Diagnostic {
 
 /// Decides what to do about one event.
 ///
-/// An owner's kind-9 message is routed by the rules of design 5.5. Every other event gets the
-/// empty result: no decisions and no thread changes, in `Direct` mode.
+/// An owner's kind-9 message and a roster bot's kind-9 message are routed by the rules of design
+/// 5.5. Every other event gets the empty result: no decisions and no thread changes, in `Direct`
+/// mode.
 pub fn route(ev: &InEvent, snap: &Snapshot<'_>, _now: DateTime<Utc>) -> RouteResult {
     match (ev.kind, classify(ev, snap.roster)) {
         (KIND_MESSAGE, AuthorClass::Owner) => owner::owner_message(ev, snap),
+        (KIND_MESSAGE, AuthorClass::Bot(author)) => bot::bot_message(ev, snap, &author),
         _ => empty_result(),
     }
 }

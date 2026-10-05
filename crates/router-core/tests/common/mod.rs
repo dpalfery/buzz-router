@@ -249,11 +249,15 @@ pub fn nprofile(name: &str, relays: &[&str]) -> String {
 // ---------------------------------------------------------------------------------------------
 
 /// One bot of a roster built by [`roster_full`]: its name (its key is the fixture key `name`),
-/// its extra `@names`, and its `respond_to` setting, `"owner-only"` or `"anyone"`.
+/// its extra `@names`, its `respond_to` setting, `"owner-only"` or `"anyone"`, and its `channels`
+/// setting: `None` for every channel (`["*"]`), or `Some(names)` for exactly the channels named
+/// (a name becomes its UUID through [`channel_uuid`]; `Some(&[])` covers none). Task 1.7 added
+/// `channels`.
 pub struct RosterBot<'a> {
     pub name: &'a str,
     pub aliases: &'a [&'a str],
     pub respond_to: &'a str,
+    pub channels: Option<&'a [&'a str]>,
 }
 
 /// `text` as a TOML basic string. The escapes JSON uses are valid TOML basic-string escapes.
@@ -262,8 +266,9 @@ fn toml_string(text: &str) -> String {
 }
 
 /// A fixture roster for owner `owner` (its key is the fixture key `owner`) with one channel,
-/// `room`, whose `default_bot` is the given bot, and with `bots` in order, each covering every
-/// channel. Built through `parse_roster`, like [`roster`] and [`roster_with`].
+/// `room`, whose `default_bot` is the given bot, and with `bots` in order, each covering the
+/// channels its [`RosterBot::channels`] says (every channel when `None`). Built through
+/// `parse_roster`, like [`roster`] and [`roster_with`].
 pub fn roster_full(owner: &str, default_bot: Option<&str>, bots: &[RosterBot<'_>]) -> Roster {
     let mut source = format!(
         r#"version = 1
@@ -290,13 +295,23 @@ default_bot = {default_bot}
             .map(|alias| toml_string(alias))
             .collect::<Vec<_>>()
             .join(", ");
+        let scope = bot.channels.map_or_else(
+            || "\"*\"".to_owned(),
+            |names| {
+                names
+                    .iter()
+                    .map(|name| format!("\"{}\"", channel_uuid(name)))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            },
+        );
         source.push_str(&format!(
             r#"
 [[bots]]
 name = {name}
 pubkey = "{pubkey}"
 aliases = [{aliases}]
-channels = ["*"]
+channels = [{scope}]
 respond_to = {respond_to}
 "#,
             name = toml_string(bot.name),

@@ -1,4 +1,5 @@
 //! Task 1.6 (RED): the routing conformance harness (design section 16.1, requirement 64).
+//! Task 1.7 (RED) registers the bot-message fixtures and adds one format key, `roster.channels`.
 //!
 //! Every `*.json` file under `fixtures/conformance/` is one case: a roster, a snapshot, one event
 //! (or a list of steps) and the expected result. The harness loads it, builds the roster and the
@@ -13,8 +14,11 @@
 //!   the CONFORM criterion the case pins, and a one-line description.
 //! - `roster`: `{"owner", "bots", "respond_to", "default_bot"}`. The owner and every bot are
 //!   symbolic names. The roster has one channel, `room`, and every event is posted in it. Every
-//!   bot covers every channel. `respond_to` maps a bot to `"owner-only"` (the default) or
-//!   `"anyone"`. `default_bot` is the channel's default bot or `null`.
+//!   bot covers every channel unless `channels` says otherwise. `respond_to` maps a bot to
+//!   `"owner-only"` (the default) or `"anyone"`. `default_bot` is the channel's default bot or
+//!   `null`. Two optional maps from a bot to a list, neither in the 16.1 example: `aliases` (extra
+//!   `@names`, extra 108) and `channels` (the channels the bot covers, as symbolic channel names
+//!   such as `"lobby"`; a bot that is not listed covers every channel, `["*"]`; extra 109).
 //! - `local_bots`, `members`: the snapshot's `local_bots` and `local_members`.
 //! - `now`: the time `route` is called with.
 //! - `quiet`, `halts`, `wake_counts`: the snapshot's `quiet` set, `halts` and `wake_counts`
@@ -140,6 +144,10 @@ struct RosterSpec {
     /// Extra `@names` per bot. Not in the 16.1 example; extra 108 needs it.
     #[serde(default)]
     aliases: BTreeMap<String, Vec<String>>,
+    /// The channels a bot covers, by symbolic channel name. Not in the 16.1 example; extra 109
+    /// needs it. A bot with no entry covers every channel. Events are always in `room`.
+    #[serde(default)]
+    channels: BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -380,10 +388,15 @@ fn label_id(label: &str) -> EventId {
 // ---------------------------------------------------------------------------------------------
 
 fn build_roster(spec: &RosterSpec) -> Roster {
-    for name in spec.respond_to.keys().chain(spec.aliases.keys()) {
+    for name in spec
+        .respond_to
+        .keys()
+        .chain(spec.aliases.keys())
+        .chain(spec.channels.keys())
+    {
         assert!(
             spec.bots.contains(name),
-            "`{name}` is in roster.respond_to or roster.aliases but not in roster.bots"
+            "`{name}` is in roster.respond_to, roster.aliases or roster.channels but not in roster.bots"
         );
     }
     let aliases: Vec<Vec<&str>> = spec
@@ -396,17 +409,28 @@ fn build_roster(spec: &RosterSpec) -> Roster {
                 .unwrap_or_default()
         })
         .collect();
+    let channel_lists: Vec<Option<Vec<&str>>> = spec
+        .bots
+        .iter()
+        .map(|name| {
+            spec.channels
+                .get(name)
+                .map(|channels| channels.iter().map(String::as_str).collect())
+        })
+        .collect();
     let bots: Vec<RosterBot<'_>> = spec
         .bots
         .iter()
         .zip(&aliases)
-        .map(|(name, aliases)| RosterBot {
+        .zip(&channel_lists)
+        .map(|((name, aliases), channels)| RosterBot {
             name,
             aliases,
             respond_to: spec
                 .respond_to
                 .get(name)
                 .map_or("owner-only", |respond_to| respond_to.as_str()),
+            channels: channels.as_deref(),
         })
         .collect();
     roster_full(&spec.owner, spec.default_bot.as_deref(), &bots)
@@ -691,16 +715,28 @@ conformance_case! {
     case_07 => "07-reply-target.json",
     case_08 => "08-mention-in-discussion-thread.json",
     case_09 => "09-mention-beats-reply-target.json",
+    case_10 => "10-discussion-bot-post.json",
+    case_11 => "11-discussion-cap.json",
+    case_12 => "12-direct-bot-reply-p-owner.json",
+    case_13 => "13-bot-mention.json",
+    case_14 => "14-bot-p-tag-ignored.json",
+    case_15 => "15-bot-everyone-plain.json",
+    case_16 => "16-bot-only-thread-cap.json",
+    case_24 => "24-quiet-hours-bot-caused.json",
+    case_27 => "27-budget-bot-caused.json",
     case_31 => "31-thread-without-participants.json",
     case_32 => "32-mention-inside-code.json",
     case_33 => "33-quoted-everyone.json",
     case_34 => "34-longest-name.json",
     case_36 => "36-self-p-tag-ignored.json",
+    case_103 => "103-mention-and-discussion-single-decision.json",
     case_106 => "106-nprofile-mention.json",
     case_107 => "107-npub-mention.json",
     case_108 => "108-alias-mention.json",
+    case_109 => "109-outside-channels-list.json",
     case_111 => "111-everyone-with-mention.json",
     case_115 => "115-default-bot-empty-thread.json",
+    case_119 => "119-daily-budget-bot-caused.json",
 }
 
 #[test]

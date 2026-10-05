@@ -1,0 +1,22 @@
+{
+  "case": 103,
+  "requirement": "12.2",
+  "title": "B mentions A in a Discussion round where A is also a participant",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "thread": {"root": "t", "participants": ["A", "B"], "discussion": true,
+             "round_id": "t", "round_mode": "discussion", "turns_used": {}},
+  "event": {"label": "b1", "author": "B", "kind": 9, "content": "@A can you check the numbers?",
+            "reply": {"root": "t", "parent": "t"}},
+  "expect": {
+    "control": null,
+    "decisions": [{"wake": {"bot": "A", "reason": "bot_mention", "priority": "bot", "debounce": true}}],
+    "thread_update": {"add_participants": ["A", "B"]},
+    "wake_mode": "discussion"
+  }
+}

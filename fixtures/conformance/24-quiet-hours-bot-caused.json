@@ -1,0 +1,25 @@
+{
+  "case": 24,
+  "requirement": "22.7",
+  "title": "B posts in a Discussion round during quiet hours",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-06T02:00:00Z",
+  "quiet": ["A", "B", "C"],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "thread": {"root": "t", "participants": ["A", "B", "C"], "discussion": true,
+             "round_id": "t", "round_mode": "discussion", "turns_used": {}},
+  "event": {"label": "b1", "author": "B", "kind": 9, "content": "My view: ship it behind a flag.",
+            "reply": {"root": "t", "parent": "t"}},
+  "expect": {
+    "control": null,
+    "decisions": [
+      {"suppress": {"bot": "A", "why": "quiet"}},
+      {"suppress": {"bot": "C", "why": "quiet"}}
+    ],
+    "thread_update": {"add_participants": ["B"]},
+    "wake_mode": "discussion"
+  }
+}
