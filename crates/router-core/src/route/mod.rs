@@ -4,6 +4,8 @@
 //! placeholder for now: it returns no decisions. Tasks 1.6 to 1.9 replace it with the routing
 //! rules.
 
+mod gates;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, Utc};
