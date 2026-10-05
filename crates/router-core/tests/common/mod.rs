@@ -17,10 +17,13 @@
     reason = "helpers in a shared test module fail the test by panicking; clippy.toml exempts only #[test] functions"
 )]
 
+use std::collections::BTreeSet;
+
 use buzz_sdk::nip_oa::compute_auth_tag;
-use nostr::{Keys, SecretKey};
+use nostr::nips::nip19::Nip19Profile;
+use nostr::{Keys, RelayUrl, SecretKey, ToBech32};
 use router_core::config::{parse_roster, Roster};
-use router_core::ids::{ChannelId, EventId, Pubkey};
+use router_core::ids::{BotName, ChannelId, EventId, Pubkey};
 use router_core::route::{InEvent, KIND_MESSAGE};
 use sha2::{Digest, Sha256};
 
@@ -150,4 +153,93 @@ pub fn auth_tag(owner: &Keys, agent: &Keys, conditions: &str) -> Vec<String> {
     let json = compute_auth_tag(owner, &agent.public_key(), conditions)
         .expect("the owner and agent keys differ and the conditions are valid");
     serde_json::from_str(&json).expect("compute_auth_tag returns a JSON array of strings")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Added by task 1.4 for the parser tests. Nothing above this line changed.
+// ---------------------------------------------------------------------------------------------
+
+/// A fixture roster like [`roster`], except that the owner's display name is `owner_name` and
+/// the bots are the given `(name, aliases)` pairs, in order. Each bot's key is the fixture key
+/// named after the bot (`keys(name)`) and each bot covers every channel. Built through
+/// `parse_roster`.
+pub fn roster_with(owner_name: &str, bots: &[(&str, &[&str])]) -> Roster {
+    let mut source = format!(
+        r#"version = 1
+
+[owner]
+name = "{owner_name}"
+pubkeys = ["{owner_1}", "{owner_2}"]
+timezone = "UTC"
+
+[[channels]]
+id = "{room}"
+name = "fixture-room"
+"#,
+        owner_1 = pubkey_hex("O"),
+        owner_2 = pubkey_hex("O2"),
+        room = channel_uuid("room"),
+    );
+    for (name, aliases) in bots {
+        let aliases = aliases
+            .iter()
+            .map(|alias| format!("\"{alias}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        source.push_str(&format!(
+            r#"
+[[bots]]
+name = "{name}"
+pubkey = "{pubkey}"
+aliases = [{aliases}]
+channels = ["*"]
+respond_to = "owner-only"
+"#,
+            pubkey = pubkey_hex(name),
+        ));
+    }
+    parse_roster(&source).expect("the fixture roster is valid")
+}
+
+/// The bot name `name`, as the router's identifier type.
+pub fn bot_name(name: &str) -> BotName {
+    BotName::new(name).expect("a fixture bot name is not blank")
+}
+
+/// The set of the bot names in `names`.
+pub fn bot_set(names: &[&str]) -> BTreeSet<BotName> {
+    names.iter().copied().map(bot_name).collect()
+}
+
+/// A `["p", <pubkey>]` tag naming the fixture key `name`.
+pub fn p_tag(name: &str) -> Vec<String> {
+    vec!["p".to_owned(), pubkey_hex(name)]
+}
+
+/// A kind-9 event in the fixture channel `room`, authored by `author`, with the text `content`
+/// and `tags` after its `h` tag.
+pub fn message(author: &Keys, content: &str, tags: Vec<Vec<String>>) -> InEvent {
+    InEvent {
+        content: content.to_owned(),
+        ..in_event(author, tags)
+    }
+}
+
+/// The `npub1...` encoding of the fixture key `name`.
+pub fn npub(name: &str) -> String {
+    keys(name)
+        .public_key()
+        .to_bech32()
+        .expect("encoding a public key as bech32 cannot fail")
+}
+
+/// The `nprofile1...` encoding of the fixture key `name` with the given relay hints, built with
+/// `Nip19Profile::to_bech32`.
+pub fn nprofile(name: &str, relays: &[&str]) -> String {
+    let relays = relays
+        .iter()
+        .map(|url| RelayUrl::parse(url).expect("a fixture relay URL parses"));
+    Nip19Profile::new(keys(name).public_key(), relays)
+        .to_bech32()
+        .expect("an nprofile with a short relay list encodes")
 }
