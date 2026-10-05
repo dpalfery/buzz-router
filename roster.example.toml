@@ -1,0 +1,48 @@
+# roster.toml: shared, and identical on every machine.
+#
+# Copy this file to roster.toml in the config directory, then replace every <placeholder> with
+# your own value. Every placeholder below must go: the router rejects the file until it does.
+# Validate it with `buzz-router roster check`, which also prints the file's SHA-256.
+
+version = 1
+
+[owner]
+name = "David"
+pubkeys = ["<david-key-1-hex>", "<david-key-2-hex>"]   # both of David's keys, as 64 hex characters
+timezone = "America/Chicago"                            # IANA zone, used for quiet hours
+
+[limits]                      # defaults for every bot; per-bot overrides allowed
+turns_per_round = 4
+wakes_per_hour = 20
+wakes_per_day = 100
+quiet_hours = "23:00-07:00"   # owner timezone; "" disables
+discussion_debounce_secs = 20
+discussion_debounce_max_secs = 90
+max_wake_minutes = 20
+max_posts_per_wake = 3
+status_note_after_secs = 20
+
+[[channels]]
+id = "<channel-uuid>"
+name = "work-for-david"
+default_bot = ""              # optional: bot that answers David's untagged top-level messages here
+
+[[bots]]
+name = "dp-grok-bot"          # exact Buzz display name
+pubkey = "<dp-grok-bot-hex>"  # 64 hex characters
+aliases = []                  # extra @names that address this bot, matched as whole words
+channels = ["*"]              # "*" = every channel the bot is a member of, or a list of channel uuids
+respond_to = "owner-only"     # owner-only | anyone
+machine = "dp-box"            # informational only
+# limits = { turns_per_round = 4 }   # optional override
+
+[[bots]]
+name = "dp-kyber-bot"
+pubkey = "<dp-kyber-bot-hex>"
+aliases = []
+channels = ["<channel-uuid>"]
+respond_to = "owner-only"
+machine = "dp-box"
+
+# Repeat [[bots]] for the rest of the roster. Names, aliases and keys must be unique, and no bot
+# may use an owner key.
