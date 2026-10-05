@@ -1,0 +1,10 @@
+/target/
+**/*.rs.bk
+*.db
+*.db-journal
+*.sqlite
+admin.token
+/router.toml
+/roster.toml
+.env
+.DS_Store
