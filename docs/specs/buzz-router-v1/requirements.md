@@ -2,7 +2,7 @@
 id: specs/buzz-router-v1/requirements
 title: buzz-router v1 requirements
 doc-type: requirements
-status: draft
+status: current
 component: buzz-router
 owner: dpalfery
 last-reviewed: 2026-10-05
@@ -10,7 +10,9 @@ last-reviewed: 2026-10-05
 
 # buzz-router v1 Requirements
 
-**Phase status:** Draft
+**Phase status:** Approved
+
+**Approval:** Approved by David on 2026-10-05 ("approved"), with assumptions A1–A18 accepted as written. Approve and execute: granted.
 
 ## Introduction
 

@@ -2,7 +2,7 @@
 id: specs/buzz-router-v1/tasks
 title: buzz-router v1 tasks
 doc-type: spec
-status: draft
+status: current
 component: buzz-router
 owner: dpalfery
 last-reviewed: 2026-10-05
@@ -10,8 +10,9 @@ last-reviewed: 2026-10-05
 
 # buzz-router v1 Implementation Tasks
 
-**Phase status:** Draft
-Written against [requirements.md](requirements.md) and [design.md](design.md) as they stand. Both are Draft, pending David's recorded approval.
+**Phase status:** Approved
+
+**Approval:** Approved by David on 2026-10-05 ("approved"). Approve and execute: granted. The specification is Ready, and this is the build plan, written against the approved [requirements.md](requirements.md) and [design.md](design.md).
 
 **Development mode:** test-first
 

@@ -2,7 +2,7 @@
 id: specs/buzz-router-v1/brief
 title: buzz-router v1 design brief
 doc-type: spec
-status: draft
+status: superseded
 component: buzz-router
 owner: dpalfery
 last-reviewed: 2026-10-05

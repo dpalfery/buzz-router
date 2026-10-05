@@ -2,15 +2,18 @@
 id: specs/buzz-router-v1/design
 title: buzz-router v1 design
 doc-type: spec
-status: draft
+status: current
 component: buzz-router
 owner: dpalfery
 last-reviewed: 2026-10-05
+supersedes: [specs/buzz-router-v1/brief]
 ---
 
 # buzz-router v1 Design
 
-**Phase status:** Draft
+**Phase status:** Approved
+
+**Approval:** Approved by David on 2026-10-05 ("approved"), with design assumptions DA-1–DA-4 accepted as written. Approve and execute: granted.
 
 ## 1. Overview
 
