@@ -1,17 +1,19 @@
 //! The routing types and the `route` function (design section 5.2, requirement 5).
 //!
-//! `route` is pure. It does no I/O and reads no clock except its `now` argument. It is a
-//! placeholder for now: it returns no decisions. Tasks 1.6 to 1.9 replace it with the routing
-//! rules.
+//! `route` is pure. It does no I/O and reads no clock except its `now` argument. It routes owner
+//! kind-9 messages by the rules of design section 5.5; every other event gets the empty result for
+//! now.
 
 mod gates;
+mod owner;
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::config::Roster;
+use crate::classify::{classify, AuthorClass};
+use crate::config::{ChannelScope, Roster};
 use crate::ids::{BotName, ChannelId, EventId, Pubkey};
 use crate::thread::{RoundMode, ThreadState};
 
@@ -241,8 +243,17 @@ pub enum Diagnostic {
 
 /// Decides what to do about one event.
 ///
-/// This is a placeholder: it returns no decisions and no thread changes, in `Direct` mode.
-pub fn route(_ev: &InEvent, _snap: &Snapshot<'_>, _now: DateTime<Utc>) -> RouteResult {
+/// An owner's kind-9 message is routed by the rules of design 5.5. Every other event gets the
+/// empty result: no decisions and no thread changes, in `Direct` mode.
+pub fn route(ev: &InEvent, snap: &Snapshot<'_>, _now: DateTime<Utc>) -> RouteResult {
+    match (ev.kind, classify(ev, snap.roster)) {
+        (KIND_MESSAGE, AuthorClass::Owner) => owner::owner_message(ev, snap),
+        _ => empty_result(),
+    }
+}
+
+/// The result for an event that wakes nobody and changes nothing.
+fn empty_result() -> RouteResult {
     RouteResult {
         control: None,
         decisions: Vec::new(),
@@ -255,4 +266,29 @@ pub fn route(_ev: &InEvent, _snap: &Snapshot<'_>, _now: DateTime<Utc>) -> RouteR
         wake_mode: RoundMode::Direct,
         diagnostics: Vec::new(),
     }
+}
+
+/// Whether `bot` covers `channel` (design 5.5, DD-5).
+///
+/// A local bot covers it when it is a member of the channel and its `channels` is `*` or lists the
+/// channel. A bot that is not local matters only as a participant, so it covers the channel only
+/// when its `channels` lists it explicitly. A bot that is not on the roster covers nothing.
+fn covers(bot: &BotName, channel: ChannelId, snap: &Snapshot<'_>) -> bool {
+    let Some(entry) = snap.roster.bots.get(bot) else {
+        return false;
+    };
+    let lists_channel =
+        matches!(&entry.channels, ChannelScope::Only(channels) if channels.contains(&channel));
+    if snap.local_bots.contains(bot) {
+        snap.local_members.contains(bot)
+            && (lists_channel || matches!(entry.channels, ChannelScope::All))
+    } else {
+        lists_channel
+    }
+}
+
+/// Whether `route` may decide something about `bot` for an event in `channel`: it is local and
+/// covers the channel (requirements 5.7 and 5.8). Only considered bots get decisions.
+fn consider(bot: &BotName, channel: ChannelId, snap: &Snapshot<'_>) -> bool {
+    snap.local_bots.contains(bot) && covers(bot, channel, snap)
 }

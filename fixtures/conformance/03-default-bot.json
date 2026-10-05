@@ -1,0 +1,19 @@
+{
+  "case": 3,
+  "requirement": "10.5",
+  "title": "Owner posts an untagged top-level message and the channel has a default bot",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {}, "default_bot": "A"},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "event": {"label": "o1", "author": "O", "kind": 9, "content": "hey"},
+  "expect": {
+    "control": null,
+    "decisions": [{"wake": {"bot": "A", "reason": "default_bot", "priority": "owner", "debounce": false}}],
+    "thread_update": {"create": {"root": "o1"}, "add_participants": ["A"], "new_round": {"round_id": "o1", "mode": "direct"}},
+    "wake_mode": "direct"
+  }
+}

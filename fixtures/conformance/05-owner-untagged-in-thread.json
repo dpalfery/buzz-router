@@ -1,0 +1,22 @@
+{
+  "case": 5,
+  "requirement": "9.4",
+  "title": "Owner posts untagged in a thread where A has replied",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "thread": {"root": "t", "participants": ["A"], "discussion": false,
+             "round_id": "t", "round_mode": "direct", "turns_used": {"A": 1}},
+  "event": {"label": "o2", "author": "O", "kind": 9, "content": "and the second part?",
+            "reply": {"root": "t", "parent": "t"}},
+  "expect": {
+    "control": null,
+    "decisions": [{"wake": {"bot": "A", "reason": "participant", "priority": "owner", "debounce": false}}],
+    "thread_update": {"add_participants": ["A"], "new_round": {"round_id": "o2", "mode": "direct"}},
+    "wake_mode": "direct"
+  }
+}

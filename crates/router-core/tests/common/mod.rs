@@ -243,3 +243,86 @@ pub fn nprofile(name: &str, relays: &[&str]) -> String {
         .to_bech32()
         .expect("an nprofile with a short relay list encodes")
 }
+
+// ---------------------------------------------------------------------------------------------
+// Added by task 1.6 for the conformance harness. Nothing above this line changed.
+// ---------------------------------------------------------------------------------------------
+
+/// One bot of a roster built by [`roster_full`]: its name (its key is the fixture key `name`),
+/// its extra `@names`, and its `respond_to` setting, `"owner-only"` or `"anyone"`.
+pub struct RosterBot<'a> {
+    pub name: &'a str,
+    pub aliases: &'a [&'a str],
+    pub respond_to: &'a str,
+}
+
+/// `text` as a TOML basic string. The escapes JSON uses are valid TOML basic-string escapes.
+fn toml_string(text: &str) -> String {
+    serde_json::to_string(text).expect("a string always serialises to JSON")
+}
+
+/// A fixture roster for owner `owner` (its key is the fixture key `owner`) with one channel,
+/// `room`, whose `default_bot` is the given bot, and with `bots` in order, each covering every
+/// channel. Built through `parse_roster`, like [`roster`] and [`roster_with`].
+pub fn roster_full(owner: &str, default_bot: Option<&str>, bots: &[RosterBot<'_>]) -> Roster {
+    let mut source = format!(
+        r#"version = 1
+
+[owner]
+name = {owner_name}
+pubkeys = ["{owner_key}"]
+timezone = "UTC"
+
+[[channels]]
+id = "{room}"
+name = "fixture-room"
+default_bot = {default_bot}
+"#,
+        owner_name = toml_string(owner),
+        owner_key = pubkey_hex(owner),
+        room = channel_uuid("room"),
+        default_bot = toml_string(default_bot.unwrap_or("")),
+    );
+    for bot in bots {
+        let aliases = bot
+            .aliases
+            .iter()
+            .map(|alias| toml_string(alias))
+            .collect::<Vec<_>>()
+            .join(", ");
+        source.push_str(&format!(
+            r#"
+[[bots]]
+name = {name}
+pubkey = "{pubkey}"
+aliases = [{aliases}]
+channels = ["*"]
+respond_to = {respond_to}
+"#,
+            name = toml_string(bot.name),
+            pubkey = pubkey_hex(bot.name),
+            respond_to = toml_string(bot.respond_to),
+        ));
+    }
+    parse_roster(&source).expect("the fixture roster is valid")
+}
+
+/// The NIP-10 `e` tags of a reply to `parent` in the thread rooted at `root` (both 64 hex
+/// characters), laid out the way `buzz_sdk` writes them: a direct reply (`parent == root`) is one
+/// `["e", root, "", "reply"]` tag, and a nested reply is `["e", root, "", "root"]` followed by
+/// `["e", parent, "", "reply"]`.
+pub fn reply_tags(root: &str, parent: &str) -> Vec<Vec<String>> {
+    let tag = |id: &str, marker: &str| {
+        vec![
+            "e".to_owned(),
+            id.to_owned(),
+            String::new(),
+            marker.to_owned(),
+        ]
+    };
+    if root == parent {
+        vec![tag(root, "reply")]
+    } else {
+        vec![tag(root, "root"), tag(parent, "reply")]
+    }
+}

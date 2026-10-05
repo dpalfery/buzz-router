@@ -1,0 +1,22 @@
+{
+  "case": 115,
+  "requirement": "10.1",
+  "title": "Owner posts untagged in a thread with no participants and the channel has a default bot",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {}, "default_bot": "A"},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "thread": {"root": "t", "participants": [], "discussion": false,
+             "round_id": "t", "round_mode": "direct", "turns_used": {}},
+  "event": {"label": "o2", "author": "O", "kind": 9, "content": "hey",
+            "reply": {"root": "t", "parent": "t"}},
+  "expect": {
+    "control": null,
+    "decisions": [{"wake": {"bot": "A", "reason": "default_bot", "priority": "owner", "debounce": false}}],
+    "thread_update": {"add_participants": ["A"], "new_round": {"round_id": "o2", "mode": "direct"}},
+    "wake_mode": "direct"
+  }
+}

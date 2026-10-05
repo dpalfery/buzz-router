@@ -20,10 +20,6 @@ use crate::route::{Snapshot, SuppressWhy, WakeCounts};
 /// bot's `respond_to`, so it never fails here. A bot with no turn entry, no wake-count entry, or
 /// no thread yet has used nothing. A bot missing from the roster is read against the default
 /// limits.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "called by the routing rules of tasks 1.7 to 1.9")
-)]
 pub(super) fn gate(
     bot: &BotName,
     gates: &[SuppressWhy],

@@ -1,0 +1,21 @@
+{
+  "case": 31,
+  "requirement": "9.6",
+  "title": "Owner posts untagged in a thread no bot has posted in",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "thread": {"root": "t", "participants": [], "discussion": false,
+             "round_id": "t", "round_mode": "direct", "turns_used": {}},
+  "event": {"label": "o2", "author": "O", "kind": 9, "content": "anyone there?",
+            "reply": {"root": "t", "parent": "t"}},
+  "expect": {
+    "control": null,
+    "decisions": [],
+    "thread_update": {}
+  }
+}

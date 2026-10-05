@@ -1,0 +1,20 @@
+{
+  "case": 106,
+  "requirement": "17.3",
+  "title": "Owner mentions A with a nostr:nprofile1 URI",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "event": {"label": "o1", "author": "O", "kind": 9,
+            "content": "please look at this nostr:nprofile1qqs076544vjxuvep3ttmdf4tyyw64kmurk9hw0fhc3y4mhr0t62gp5gd0n8vl"},
+  "expect": {
+    "control": null,
+    "decisions": [{"wake": {"bot": "A", "reason": "mention", "priority": "owner", "debounce": false}}],
+    "thread_update": {"create": {"root": "o1"}, "add_participants": ["A"], "new_round": {"round_id": "o1", "mode": "direct"}},
+    "wake_mode": "direct"
+  }
+}
