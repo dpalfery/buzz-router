@@ -1,0 +1,15 @@
+[package]
+name = "test-agent"
+description = "Scripted agent process used by buzz-router's engine and end-to-end tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "buzz-router-test-agent"
+path = "src/main.rs"
+
+[lints]
+workspace = true

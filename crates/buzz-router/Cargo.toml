@@ -1,0 +1,49 @@
+[package]
+name = "buzz-router"
+description = "The buzz-router daemon and CLI: relay client, wake engine, adapters, store and HTTP API"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# The library target is `buzz_router` (src/lib.rs, holding every module). The binary
+# `buzz-router` (src/main.rs) only calls `buzz_router::cli::main()`.
+
+[dependencies]
+# Keyring pin (task 1.1, criterion 4). Verified 2026-10-05 against the crate sources and with a
+# probe program.
+#
+# * `keyring` 4.2.0 is the latest major (MSRV 1.88). Its API moved to `keyring-core` 1.0.0.
+#   `keyring` 4.x names two aggregate features, `v1` (default) and `cli` (every store plus
+#   extras), and also exposes each store crate as its own feature: android-native-keyring-store,
+#   apple-native-keyring-store, db-keystore, dbus-secret-service-keyring-store,
+#   linux-keyutils-keyring-store, windows-native-keyring-store and
+#   zbus-secret-service-keyring-store. It has no `keyring::mock` and none of the 3.x feature
+#   names (apple-native, windows-native, sync-secret-service).
+# * Feature `v1` is the platform set: it enables apple-native-keyring-store/keychain,
+#   windows-native-keyring-store and zbus-secret-service-keyring-store, which resolve to:
+#     - macOS:   apple-native-keyring-store 1.0.2 (feature `keychain`, Keychain Services)
+#     - Windows: windows-native-keyring-store 1.1.0 (Credential Manager)
+#     - Linux:   zbus-secret-service-keyring-store 1.0.1 (feature `crypto-rust`, Secret Service)
+#   The Linux store calls `secret_service::blocking`, so every call is synchronous and needs no
+#   tokio runtime. It is pure Rust, so there is no libdbus system dependency. `default-features
+#   = false` plus `v1` keeps the choice explicit and leaves out `cli`. The alternative Linux
+#   store, feature `dbus-secret-service-keyring-store` (libdbus, also synchronous), is selectable
+#   but not used: it would add a libdbus system dependency (or a vendored build) for no gain.
+# * `keyring::Entry` is not injectable. Its first `Entry::new` or `Entry::store_status` call runs
+#   a one-time `set_default_store(<native store>)`. A mock installed before that call is
+#   overwritten by the native store (probe result), and on a headless Linux runner a failed
+#   init makes `Entry::new` return `NoDefaultStore`. So the code uses `keyring_core::Entry`.
+# * Arrangement for keys.rs (tasks 2.2 and 6.1):
+#     - Production: one startup function calls `keyring::Entry::store_status()` once to install
+#       the native store, then every entry is a `keyring_core::Entry` created with service
+#       `buzz-router` and the bot name as the account.
+#     - Tests: install the mock with `keyring_core::set_default_store(keyring_core::mock::Store::new()?)`
+#       and never call the production installer in that process, because it would replace the
+#       mock. `keyring_core::mock` is always compiled (no feature needed).
+# * Linux calls block, so async code reaches them through `spawn_blocking`.
+keyring = { workspace = true }
+keyring-core = { workspace = true }
+
+[lints]
+workspace = true

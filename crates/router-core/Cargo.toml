@@ -1,0 +1,27 @@
+[package]
+name = "router-core"
+description = "Pure routing logic for buzz-router: configuration, parsing, route() and the offline replay simulator"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# router-core is pure: no I/O and no tokio (R5.9). This is the complete dependency set from
+# design section 3.2. CI asserts that `cargo tree -p router-core -e normal -i tokio` finds nothing.
+[dependencies]
+buzz-core = { workspace = true }
+buzz-sdk = { workspace = true }
+nostr = { workspace = true }
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+regex = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true
