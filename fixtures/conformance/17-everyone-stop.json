@@ -1,0 +1,18 @@
+{
+  "case": 17,
+  "requirement": "29.9",
+  "title": "O posts \"@everyone stop\"",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "event": {"label": "o1", "author": "O", "kind": 9, "content": "@everyone stop"},
+  "expect": {
+    "control": {"stop": "all"},
+    "decisions": [],
+    "thread_update": {}
+  }
+}

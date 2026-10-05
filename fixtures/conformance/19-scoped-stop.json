@@ -1,0 +1,18 @@
+{
+  "case": 19,
+  "requirement": "29.11",
+  "title": "O posts \"@A stop\"",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "event": {"label": "o1", "author": "O", "kind": 9, "content": "@A stop"},
+  "expect": {
+    "control": {"stop": {"bots": ["A"]}},
+    "decisions": [],
+    "thread_update": {}
+  }
+}

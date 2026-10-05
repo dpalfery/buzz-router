@@ -1,0 +1,18 @@
+{
+  "case": 114,
+  "requirement": "29.6",
+  "title": "O posts \"@A @B resume\"",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "event": {"label": "o1", "author": "O", "kind": 9, "content": "@A @B resume"},
+  "expect": {
+    "control": {"resume": {"bots": ["A", "B"]}},
+    "decisions": [],
+    "thread_update": {}
+  }
+}

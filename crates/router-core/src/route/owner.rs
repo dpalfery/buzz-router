@@ -1,6 +1,10 @@
-//! The owner kind-9 rules of `route` (design section 5.5, `owner_message`; requirements 6 to 10).
+//! The owner kind-9 rules of `route` (design section 5.5, `owner_message`; requirements 6 to 10
+//! and 29).
 //!
-//! The first matching rule picks the targets, the reason and the round mode:
+//! A control command, `stop`, `resume` or `!cancel`, is tested for first. When one matches it is
+//! the whole result: no decision and no thread change (requirement 29.1).
+//!
+//! Otherwise the first matching rule picks the targets, the reason and the round mode:
 //!
 //! - (a) `@everyone`: every roster bot that covers the channel, as a discussion (requirement 7).
 //! - (b) explicit mentions: exactly the mentioned bots (requirement 6.2).
@@ -22,7 +26,7 @@ use super::{
 };
 use crate::classify::AuthorClass;
 use crate::ids::BotName;
-use crate::parse::{contains_everyone, mention_text, mentioned_bots};
+use crate::parse::{contains_everyone, mention_text, mentioned_bots, parse_control};
 use crate::thread::{thread_position, RoundMode, ThreadPos};
 
 /// What the first matching rule decided.
@@ -50,11 +54,19 @@ impl Targets {
     }
 }
 
-/// Routes an owner's kind-9 message (design 5.5, `owner_message`, steps 2 to 5).
+/// Routes an owner's kind-9 message (design 5.5, `owner_message`).
 ///
-/// Step 1, the control commands, is not part of this function yet.
+/// A control command comes first and is returned alone, with no decision and an empty thread
+/// update (step 1, requirement 29.1). Any other message goes through the target rules (steps 2 to
+/// 5).
 pub(super) fn owner_message(ev: &InEvent, snap: &Snapshot<'_>) -> RouteResult {
     let mentioned = mentioned_bots(ev, &AuthorClass::Owner, snap.roster, None);
+    if let Some(control) = parse_control(&ev.content, snap.roster, &mentioned) {
+        return RouteResult {
+            control: Some(control),
+            ..empty_result()
+        };
+    }
     let pos = thread_position(&ev.tags);
 
     let Some(Targets {

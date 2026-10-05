@@ -3,6 +3,8 @@
 //! Task 1.8 (RED) registers the human, foreign-bot, edit and status-tag fixtures and adds four
 //! format changes: `edit_target`, `event.tags`, `expect.diagnostics`, and a `quiet` that may be
 //! omitted.
+//! Task 1.9 (RED) registers the control fixtures (stop, resume, cancel); the format needed no
+//! change.
 //!
 //! Every `*.json` file under `fixtures/conformance/` is one case: a roster, a snapshot, one event
 //! (or a list of steps) and the expected result. The harness loads it, builds the roster and the
@@ -791,6 +793,12 @@ conformance_case! {
     case_14 => "14-bot-p-tag-ignored.json",
     case_15 => "15-bot-everyone-plain.json",
     case_16 => "16-bot-only-thread-cap.json",
+    case_17 => "17-everyone-stop.json",
+    case_18 => "18-fucking-stop.json",
+    case_19 => "19-scoped-stop.json",
+    case_20 => "20-long-sentence-not-stop.json",
+    case_21 => "21-scoped-cancel.json",
+    case_22 => "22-resume-all.json",
     case_23 => "23-halted-owner-mention.json",
     case_24 => "24-quiet-hours-bot-caused.json",
     case_25 => "25-quiet-owner-mention.json",
@@ -818,12 +826,15 @@ conformance_case! {
     case_110 => "110-halted-owner-only-respond-to.json",
     case_111 => "111-everyone-with-mention.json",
     case_112 => "112-non-owner-edit-ignored.json",
+    case_113 => "113-shutdown.json",
+    case_114 => "114-scoped-resume-two-bots.json",
     case_115 => "115-default-bot-empty-thread.json",
     case_116 => "116-foreign-roster-drift.json",
     case_117 => "117-human-everyone-plain.json",
     case_118 => "118-quiet-boundary.json",
     case_119 => "119-daily-budget-bot-caused.json",
     case_120 => "120-daily-budget-owner-not-blocked.json",
+    case_121 => "121-bot-stop-not-control.json",
 }
 
 #[test]
