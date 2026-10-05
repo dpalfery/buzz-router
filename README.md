@@ -12,7 +12,11 @@ Agents never hold their own Buzz keys. They're woken by the router and reply thr
 
 ## Status
 
-Design approved, implementation not started. The full design is in [SPEC.md](SPEC.md), including the build order (section 17) and the acceptance tests (section 15).
+Design approved; formal specification in progress; implementation not started.
+
+- [Design brief](docs/specs/buzz-router-v1/brief.md): the approved design, including the build order (section 17) and the acceptance tests (section 15).
+- [Specification index](docs/specs/README.md): the formal requirements, design and tasks as they're approved.
+- [Documentation](docs/README.md): governed by [kyber-weave](https://github.com/dpalfery/kyber-weave).
 
 ## Highlights
 

@@ -1,0 +1,46 @@
+# Kyber-Weave docs gate. Adapted from kyber-weave's templates/github-actions/kyber-weave-docs-gate.yml.
+# Only `docs validate` for now. Add the `docs drift` job once there's code and a
+# CodeGraph index (.codegraph/codegraph.db) to resolve code-refs against.
+
+name: Docs Gate
+
+"on":
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: docs-gate-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  # Keep in step with the version used locally.
+  KYBER_WEAVE_VERSION: "0.1.7-rc.16"
+
+jobs:
+  docs-validate:
+    name: Docs validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install Kyber-Weave
+        run: |
+          set -euo pipefail
+          # Download then execute (not curl|sh) so SAST tools can verify the step.
+          # Binaries the script installs are SHA-256 verified against the Release.
+          curl -fsSL -o "${RUNNER_TEMP}/kyber-weave-install.sh" \
+            https://raw.githubusercontent.com/dpalfery/kyber-weave/main/scripts/install.sh
+          sh "${RUNNER_TEMP}/kyber-weave-install.sh" --no-mcp --version "${KYBER_WEAVE_VERSION}"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Validate documentation frontmatter
+        run: kyber-weave docs validate . --format table

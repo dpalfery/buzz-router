@@ -1,6 +1,17 @@
-# buzz-router — shared Buzz listener spec
+---
+id: specs/buzz-router-v1/brief
+title: buzz-router v1 design brief
+doc-type: spec
+status: draft
+component: buzz-router
+owner: dpalfery
+last-reviewed: 2026-10-05
+---
 
-Status: approved design, ready to build. Owner: David.
+# buzz-router v1 design brief
+
+The design David approved in the Buzz team thread on 2026-10-04. It's the input to the formal specification in this folder: `requirements.md`, then `design.md`, then `tasks.md`. Once those three are approved, they supersede this brief. Until then, this brief is the source of truth.
+
 Replaces every per-bot Buzz listener (dp-, sf-, Hal, Zo, Claw) with one program.
 
 ## 0. Decisions already made
