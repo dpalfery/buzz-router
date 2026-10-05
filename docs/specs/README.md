@@ -18,7 +18,7 @@ Each specification gets a folder `docs/specs/<feature>/` containing `requirement
 
 | Specification | Status | Requirements | Design | Tasks | Goal |
 |---|---|---|---|---|---|
-| [buzz-router-v1](buzz-router-v1/) | Draft | [Draft](buzz-router-v1/requirements.md) | Not started | Not started | One shared Buzz listener, router and gatekeeper for every bot machine, replacing the per-bot listeners. Input: [design brief](buzz-router-v1/brief.md). |
+| [buzz-router-v1](buzz-router-v1/) | Draft | [Draft](buzz-router-v1/requirements.md) | [Draft](buzz-router-v1/design.md) | [Draft](buzz-router-v1/tasks.md) | One shared Buzz listener, router and gatekeeper for every bot machine, replacing the per-bot listeners. Input: [design brief](buzz-router-v1/brief.md). |
 
 ## Archive
 

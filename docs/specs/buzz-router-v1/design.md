@@ -64,8 +64,9 @@ buzz-router/
     src/payload.rs              WakePayload model and builder
     src/replay.rs               offline simulator for `route --replay`
     tests/conformance.rs        runs fixtures/conformance/*.json
-  crates/buzz-router/           the binary (sections 6–14)
-    src/main.rs                 clap entry, exit-code mapping
+  crates/buzz-router/           the daemon and CLI (sections 6–14): a library target plus a thin binary
+    src/lib.rs                  library target; holds every module below, so tests/ can reach them
+    src/main.rs                 binary `buzz-router`; only calls buzz_router::cli::main()
     src/cli/{mod,run,status,control,agent,wakes,capture,replay,keys,roster,service}.rs
     src/paths.rs  src/clock.rs  src/keys.rs  src/logging.rs
     src/store/{mod,schema,events,threads,wakes,posts,halts,cursors}.rs
@@ -74,8 +75,9 @@ buzz-router/
     src/core/{mod,apply,queue,dispatch,timers,control,status}.rs
     src/adapter/{mod,command,webhook}.rs
     src/publish.rs              replies, status notes, reactions, typing
-    src/api/{mod,token,admin,error}.rs
+    src/api/{mod,token,admin,error,admin_token}.rs
     src/service/{mod,macos,linux,windows}.rs
+    tests/support/mod.rs        shared test support: FakeRelay, FakeAdapter, test_agent_path() (sections 16.2, 16.3)
     tests/engine_*.rs           fake clock, fake relay, fake adapters (section 16.2)
     tests/e2e_*.rs              local-relay acceptance, ignored unless BUZZ_E2E=1
   crates/test-agent/            publish = false; binary `buzz-router-test-agent` (section 16.3)
@@ -564,6 +566,12 @@ flowchart LR
   - `PublishResult{..}`
   - `Api(ApiRequest, oneshot::Sender<ApiResponse>)`
   - `Shutdown`
+
+  **Test seam.** `core::spawn_core(CoreDeps) -> CoreHandle` starts the actor. `CoreDeps` carries the store, roster, router config, clock, per-bot `RelayPort`s and adapters. `CoreHandle` exposes:
+  - `ingest(bot, nostr::Event, Source)`, which feeds an event through the ingest pipeline;
+  - `api(ApiRequest) -> ApiResponse`;
+  - `flush()`, which resolves once the core has drained its queue (tests only);
+  - `debug_counters()`, which returns the in-memory status counters (tests only).
 - **Ingest task** (`ingest.rs`) is single and sequential, so arrival order is preserved. It holds a read-only SQLite connection and the per-bot REST clients (section 6.3).
 - **RelayConn tasks** run one per local bot (section 10).
 - **WakeRunner tasks** run one per running wake. Each runs the adapter, then reports `AdapterEvent`s. Cancellation is a `tokio_util::sync::CancellationToken` that the core triggers.
@@ -901,7 +909,7 @@ Both use `DefaultBodyLimit::max(70 * 1024)`.
 - **Error body:** `{"error": "<code>", "message": "<detail>"}`, with codes `unauthorized`, `halted`, `wake_ended`, `too_many_posts`, `bad_request`, `publish_failed` and `not_found` (DD-22).
 - Every handler sends an `ApiRequest` to the core and awaits a `oneshot` response, so all state changes stay serialised. The tailnet listener is plain HTTP (R38.4). Binds are validated by A3, so no public interface can be configured.
 
-**Admin token creation** (R43.4): 32 random bytes, hex-encoded, written to `data_dir/admin.token`.
+**Admin token creation** (R43.4): `api::admin_token::ensure(data_dir) -> Result<String, ApiError>` returns the existing token, or creates one: 32 random bytes, hex-encoded, written to `data_dir/admin.token`.
 
 - On Unix, the file is created with `OpenOptions::new().write(true).create_new(true).mode(0o600)`.
 - On Windows, it inherits the per-user ACL of `%LOCALAPPDATA%`.
@@ -909,6 +917,8 @@ Both use `DefaultBodyLimit::max(70 * 1024)`.
 ## 9. SQLite store (`store/`)
 
 Requirements: 18.5, 30.2, 34.3, 47.
+
+**Build order.** The store, meaning the schema, migration 1 and the repositories, lands in Milestone 2 (tasks.md task 2.1), earlier than brief §17.4 places it, because ingest (§6.3) and the engine (§6.1) both depend on it. Recovery behaviour stays in Milestone 4: interrupted wakes, missed messages, unmanaged-post detection and `status` (§6.2 steps 6 and 8, §6.3 step 2, §12.2).
 
 ### 9.1 Connection setup
 
@@ -1131,6 +1141,8 @@ Requirement 56.
 
 The router writes its own service definitions and drives the OS tools through `std::process::Command` (DD-8). `service install` writes the definition, then loads and starts it, running `<current exe> run` as the user (R56.1).
 
+**Test seam.** Rendering is done by pure functions: `service::render_launchd_plist`, `render_systemd_unit` and `render_task_xml`. Every OS command goes through a `service::CommandRunner` trait. Production uses `std::process::Command`; tests use a recording fake, so CI never installs a real service.
+
 **macOS** (R56.2):
 - **Install:** write `~/Library/LaunchAgents/com.buzz-router.plist` with:
   - `Label` = `com.buzz-router`;
@@ -1257,6 +1269,33 @@ An `auth` entry on the event, such as `{"owner": "X"}`, makes the harness genera
 
 A fixture may omit `thread_update` or `wake_mode` when the case says nothing about them. When present, they are compared exactly. Every `expect` must agree with the CONFORM criterion of the same number.
 
+**Multi-step fixtures.** A fixture may replace `event` and `expect` with a `"steps"` array of `{"now"?, "event", "expect"}` objects, run in order against one evolving state.
+
+- After each step, the harness applies that step's `thread_update` and adds one turn to `turns_used` for every `Wake`, as if it had been dispatched.
+- A step's optional `now` overrides the fixture's `now` for that step.
+- Case 16 uses this (ten alternating bot posts until both bots hit their cap), and so does extra 118 (one step at 23:00:00, one at 07:00:00).
+
+```json
+{
+  "case": 16,
+  "requirement": "13.3",
+  "title": "Bot-only thread runs out of turns",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "steps": [
+    {"event": {"label": "a1", "author": "A", "kind": 9, "content": "@B can you look?"},
+     "expect": {"decisions": [{"wake": {"bot": "B", "reason": "bot_mention", "priority": "bot", "debounce": true}}]}},
+    {"event": {"label": "b1", "author": "B", "kind": 9, "content": "@A done",
+               "reply": {"root": "a1", "parent": "a1"}},
+     "expect": {"decisions": [{"wake": {"bot": "A", "reason": "bot_mention", "priority": "bot", "debounce": true}}]}}
+  ]
+}
+```
+
+The example shows only the first two of case 16's ten steps.
+
 **Extra fixtures** (`101+`) cover rules that no §15.1 case exercises (R64.3):
 
 | Fixture | Rule |
@@ -1278,7 +1317,10 @@ A fixture may omit `thread_update` or `wake_mode` when the case says nothing abo
 | 115 | `default_bot` in a thread with no participants |
 | 116 | foreign bot whose owner is ours yields `RosterDrift` |
 | 117 | human `@everyone` is plain text |
-| 118 | quiet-hours boundary at 23:00:00 and 07:00:00 (A1) |
+| 118 | quiet-hours boundary at 23:00:00 and 07:00:00 (A1), as a multi-step fixture |
+| 119 | daily budget reached suppresses a bot-caused wake (`Budget`) |
+| 120 | daily budget reached doesn't block an owner-caused wake |
+| 121 | a bot's "stop" message is not a control command |
 
 ### 16.2 Engine tests (`crates/buzz-router/tests/engine_*.rs`)
 
@@ -1316,7 +1358,12 @@ A small cross-platform Rust binary, `buzz-router-test-agent`, replaces shell scr
 - `echo --delay <secs>`: reads the prompt from stdin and prints a reply after the delay. This is the brief §15.3 "script that echoes after a configurable delay".
 - `api-post --text T`: calls `buzz-router post`.
 
-Tests find it at `env!("CARGO_BIN_EXE_buzz-router-test-agent")`, which works through a dev-dependency.
+Tests find it through `test_agent_path()` in `crates/buzz-router/tests/support/mod.rs`:
+
+1. On first call (guarded by a `std::sync::OnceLock`), it runs `$CARGO build -p test-agent`, using the `CARGO` environment variable that `cargo test` sets.
+2. It returns `<target>/debug/buzz-router-test-agent` plus `std::env::consts::EXE_SUFFIX`, with the target directory located from `std::env::current_exe()`.
+
+`CARGO_BIN_EXE_*` can't be used, because Cargo sets it only for binaries of the package under test, and the test agent lives in its own package.
 
 ### 16.4 End-to-end harness (`crates/buzz-router/tests/e2e_*.rs`)
 
