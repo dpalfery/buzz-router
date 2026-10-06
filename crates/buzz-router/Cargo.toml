@@ -45,5 +45,21 @@ license.workspace = true
 keyring = { workspace = true }
 keyring-core = { workspace = true }
 
+# The CLI (task 1.11). `router-core` is a path dependency because the root manifest's
+# `[workspace.dependencies]` holds exactly the design 3.2 table and no workspace-internal crate.
+router-core = { path = "../router-core" }
+buzz-sdk = { workspace = true }
+nostr = { workspace = true }
+clap = { workspace = true }
+directories = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+sha2 = { workspace = true }
+tempfile = { workspace = true }
+
 [lints]
 workspace = true

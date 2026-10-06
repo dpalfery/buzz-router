@@ -4,3 +4,5 @@
 //! target so that the integration tests under `tests/` can reach them.
 
 pub mod cli;
+mod logging;
+pub mod paths;
