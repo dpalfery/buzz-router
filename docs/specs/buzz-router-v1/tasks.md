@@ -5,7 +5,7 @@ doc-type: spec
 status: current
 component: buzz-router
 owner: dpalfery
-last-reviewed: 2026-10-05
+last-reviewed: 2026-10-06
 ---
 
 # buzz-router v1 Implementation Tasks
@@ -15,6 +15,42 @@ last-reviewed: 2026-10-05
 **Approval:** Approved by David on 2026-10-05 ("approved"). Approve and execute: granted. The specification is Ready, and this is the build plan, written against the approved [requirements.md](requirements.md) and [design.md](design.md).
 
 **Development mode:** test-first
+
+## Progress
+
+**Implementation status:** In progress. Paused by David on 2026-10-06 after milestone 1.
+
+| | |
+|---|---|
+| Branch | `feat/buzz-router-v1` (pushed to origin) |
+| Pull request | [#1 (draft)](https://github.com/dpalfery/buzz-router/pull/1) |
+| Last task commit | `22dd879` (T1.11) |
+| Tests | 389 passed, 0 failed (`cargo test --workspace --locked`, macOS arm64). `clippy -D warnings` and `fmt --check` are clean. `router-core` is tokio-free. 59 conformance cases. |
+| CI | Docs Gate only. There is no Rust CI yet (see O1), so there are no Linux or Windows results. |
+
+| Milestone | Tasks | Status |
+|---|---|---|
+| 1. router-core and conformance | 1.1–1.11 | 10 of 11 done. 1.1 is blocked on criterion 6 (ci.yml, O1). |
+| 2. Relay I/O | 2.1–2.9 | Not started. **Resume point: 2.1** |
+| 3. Wake engine plus stop | 3.1–3.10 | Not started |
+| 4. State and recovery | 4.1–4.4 | Not started |
+| 5. Webhook adapter | 5.1–5.2 | Not started |
+| 6. Packaging, CI and release | 6.1–6.4 | Not started |
+| 7. End-to-end acceptance | 7.1–7.5 | Not started |
+| 8. Docs and closeout | 8.1–8.2 | Not started |
+
+### Open items for the owner
+
+Raised during milestone 1. Each needs David's decision before the task that depends on it.
+
+- **O1, ci.yml (blocks 1.1 criterion 6 and all Linux/Windows CI).** github-devops declined to write `.github/workflows/ci.yml` without a declared `<github-actions-coding-standard>`. It asks whether it may write ci.yml exactly as specified in 1.1 criterion 6, with actions pinned by SHA like `docs-gate.yml`.
+- **O2, F5, config edge cases.** The architect settled the config type shapes. Still open: duplicate channel ids; `max_concurrent = 0` or an empty command; a bot named `all`.
+- **O3, F6.** A bare owner name in reply `p` tags: the contract literal versus R44.4. T1.4 implemented an interim reading (every owner pubkey for a bare whole-word `owner.name`).
+- **O4, F8.** R17.4 versus R15.2 and design §5.5 on foreign-bot `p` tags.
+- **O5, F9.** Replay doesn't invent thread state for roots it never saw.
+- **O6, keyring 4.x.** keyring 4.x splits into `keyring-core` plus store crates. Design §11 and the task text assume `keyring::Entry` and keyring's own mock. T1.1 pinned keyring 4.2.0 (feature `v1`) with keyring-core 1.0.0.
+- **O7, task 6.1.** The `ErrorKind::Key` question.
+- **O8, DD-19.** The `~` expansion of the adapter `cwd` isn't in any task.
 
 ## How to work these tasks
 
@@ -152,11 +188,12 @@ Tests are written before implementation, so these public names and signatures ar
       - buzz-router smoke: with `keyring`'s mock credential builder installed, an `Entry` for service `buzz-router-smoke` can `set_password` and then `get_password`.
     - *RED:* there is no workspace, so `cargo test` fails with `could not find Cargo.toml`.
     - *GREEN:* both smoke tests pass locally and in the CI skeleton on all three OSes.
-  - [ ] RED evidence recorded
+  - [x] RED evidence recorded
   - [ ] GREEN
   - [ ] REFACTOR
+  - **Status:** done except criterion 6 (`.github/workflows/ci.yml`), which is blocked on owner decision O1 (see Progress). Commit `9c932ee`. Local smoke tests are green; the GREEN criterion "in CI on all three OSes" is unmet until ci.yml exists.
 
-- [ ] **1.2 Config types, validation and example files**
+- [x] **1.2 Config types, validation and example files**
   - **Objective:** Parse and validate `roster.toml` and `router.toml` into resolved types, collecting every issue at once. Ship placeholder example files.
   - **Files:** `crates/router-core/src/ids.rs`, `crates/router-core/src/config/{mod.rs,roster.rs,router.rs,limits.rs,validate.rs}`, `roster.example.toml`, `router.example.toml`, `crates/router-core/tests/config.rs`, `crates/router-core/tests/config_examples.rs`.
   - **Design:** §4.2, §4.3, §5.1, DD-19.
@@ -184,11 +221,12 @@ Tests are written before implementation, so these public names and signatures ar
     - *Behaviour (examples):* both example files parse and validate after every `<…>` placeholder is replaced with deterministic fake values. Neither file contains a 64-hex literal, `nsec1`, `npub1`, or a `wss://` host other than `<relay-host>`.
     - *RED:* compile error, unresolved import `router_core::config`; the example files don't exist.
     - *GREEN:* both test files pass.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** commit `49fd432`.
 
-- [ ] **1.3 Core types, thread position and author classification**
+- [x] **1.3 Core types, thread position and author classification**
   - **Objective:** Define the router-core types and `route` signature, the NIP-10 thread resolution, and author classification.
   - **Files:** `crates/router-core/src/{thread.rs,classify.rs}`, `crates/router-core/src/route/mod.rs`, `crates/router-core/tests/{thread_position.rs,classify.rs}`.
   - **Design:** §5.2, §5.3.
@@ -210,11 +248,12 @@ Tests are written before implementation, so these public names and signatures ar
       - An auth tag computed for a different agent pubkey gives `Human`. No auth tag gives `Human`.
     - *RED:* compile error, unresolved `router_core::thread::thread_position` and `router_core::classify::classify`.
     - *GREEN:* both files pass.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** commit `853e4d0`.
 
-- [ ] **1.4 Parsing: mentions, `@everyone`, control and reply mentions**
+- [x] **1.4 Parsing: mentions, `@everyone`, control and reply mentions**
   - **Objective:** Implement the parsers in §5.4, including `nprofile` decoding (the A18 resolution) and the mention extractor for reply `p` tags.
   - **Files:** `crates/router-core/src/parse/{mod.rs,text.rs,mentions.rs,everyone.rs,control.rs,nip19.rs}`, `crates/router-core/tests/{parse_mentions.rs,parse_control.rs}`.
   - **Design:** §5.4, §6.8 (reply mentions), DD-18.
@@ -239,11 +278,12 @@ Tests are written before implementation, so these public names and signatures ar
       - `"nostr:npub1… stop"` returns `Stop` with the URI stripped.
     - *RED:* compile error, unresolved module `router_core::parse`.
     - *GREEN:* both files pass.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** commit `36e9306`.
 
-- [ ] **1.5 Quiet hours and limit gates**
+- [x] **1.5 Quiet hours and limit gates**
   - **Objective:** Implement `quiet_set` (half-open, owner timezone, per-bot) and the ordered gate helper.
   - **Files:** `crates/router-core/src/quiet.rs`, `crates/router-core/src/route/gates.rs` (with `#[cfg(test)] mod tests`), `crates/router-core/tests/quiet.rs`.
   - **Design:** §5.5 (gate helper), §5.6, DD-4.
@@ -273,11 +313,12 @@ Tests are written before implementation, so these public names and signatures ar
       - Below every limit gives `None`.
     - *RED:* compile error, unresolved `router_core::quiet::quiet_set` and `route::gates::gate`.
     - *GREEN:* all pass.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** commit `4d725ac`.
 
-- [ ] **1.6 Conformance harness and owner-message routing**
+- [x] **1.6 Conformance harness and owner-message routing**
   - **Objective:** Build the fixture harness, then implement `route` for owner kind-9 messages: rules (a)–(f), the new round, and halted gating.
   - **Files:**
     - `crates/router-core/tests/conformance.rs`, `crates/router-core/tests/common/mod.rs`;
@@ -303,11 +344,12 @@ Tests are written before implementation, so these public names and signatures ar
     - *Behaviour:* each conformance case returns its brief result. **Cases 1, 2, 3, 4, 5, 6, 7, 8, 9, 31, 32, 33, 34 and 36**, plus the extras: nprofile and npub mentions wake their bot; an alias wakes its bot; `@everyone` plus `@A` wakes every covered bot with reason `Everyone`; `default_bot` applies in a thread with no participants.
     - *RED:* the positive cases fail because the placeholder `route` returns no decisions. The negative cases 2, 31, 32 and 36 may pass, and are kept as guards (group RED).
     - *GREEN:* every listed test passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** commit `e7d71f3`.
 
-- [ ] **1.7 Bot-message routing, discussions and bot rounds**
+- [x] **1.7 Bot-message routing, discussions and bot rounds**
   - **Objective:** Implement bot_message: participants, bot mentions, discussion targets, the bot round, and gates.
   - **Files:**
     - `crates/router-core/src/route/bot.rs`;
@@ -325,11 +367,12 @@ Tests are written before implementation, so these public names and signatures ar
     - *Behaviour:* **cases 10, 11, 12, 13, 14, 15, 16, 24 and 27** match the brief. Extra 103 gives one decision, with reason `BotMention`. Extra 109 gives no decision for a local bot whose `channels` list excludes the channel. Extra 119 gives `Suppress(Budget)` when the daily count is reached.
     - *RED:* the placeholder returns no decisions for bot authors, so cases 10, 11, 13, 16, 24, 27, 103 and 119 fail.
     - *GREEN:* all listed pass, and so do the 1.6 cases (no regression).
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** commit `395e000`.
 
-- [ ] **1.8 Human, foreign-bot and edit routing; status tag; halts; owner exemptions**
+- [x] **1.8 Human, foreign-bot and edit routing; status tag; halts; owner exemptions**
   - **Objective:** Implement human_message, foreign_message, owner_edit, the status-tag short-circuit, the RespondTo precedence, and the owner exemptions from quiet hours and budgets.
   - **Files:**
     - `crates/router-core/src/route/{human.rs,edit.rs}` and dispatch in `route/mod.rs`;
@@ -355,11 +398,12 @@ Tests are written before implementation, so these public names and signatures ar
       - 120: the owner isn't blocked by the daily budget.
     - *RED:* the human, foreign and edit paths are unimplemented, so cases 23, 25, 26, 29, 30, 35, 37, 101, 102, 104, 105, 110, 116 and 118 fail. Case 28 may already pass (group RED).
     - *GREEN:* all listed pass, with no regression in 1.6 or 1.7.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** commit `7938bd8`.
 
-- [ ] **1.9 Control routing (stop, resume, cancel)**
+- [x] **1.9 Control routing (stop, resume, cancel)**
   - **Objective:** Wire `parse_control` into owner_message as rule 1. Control comes only from owner kind 9.
   - **Files:**
     - `crates/router-core/src/route/owner.rs`;
@@ -375,11 +419,12 @@ Tests are written before implementation, so these public names and signatures ar
     - *Behaviour:* **cases 17, 18, 19, 20, 21 and 22** match the brief. Extra 113: `!shutdown` gives `Stop(All)`. Extra 114: `"@A @B resume"` gives `Resume({A,B})`. Extra 121: a bot posting "stop" is not control.
     - *RED:* no control is returned yet, so cases 17, 18, 19, 21, 22, 113 and 114 fail.
     - *GREEN:* all listed pass, and the whole conformance suite passes (`cargo test -p router-core --test conformance`).
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** commit `7a6806f`.
 
-- [ ] **1.10 Offline replay simulator**
+- [x] **1.10 Offline replay simulator**
   - **Objective:** Implement `Replayer` as described in §5.8.
   - **Files:** `crates/router-core/src/replay.rs`, `crates/router-core/tests/replay.rs`.
   - **Design:** §5.8.
@@ -398,11 +443,12 @@ Tests are written before implementation, so these public names and signatures ar
       - Replies resolve their parent author from earlier events.
     - *RED:* compile error, unresolved `router_core::replay::Replayer`.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** commit `546f097`.
 
-- [ ] **1.11 CLI skeleton: paths, errors, `roster check`, `route --replay`**
+- [x] **1.11 CLI skeleton: paths, errors, `roster check`, `route --replay`**
   - **Objective:** Build the clap command tree with the exact brief §13 command list, path resolution, the JSON error and exit-code mapping, and the first two working commands.
   - **Files:** `crates/buzz-router/src/main.rs`, `src/cli/{mod.rs,roster.rs,replay.rs}`, `src/paths.rs`, `src/logging.rs` (stderr init only), and `crates/buzz-router/tests/{cli_roster_check.rs,cli_replay.rs,cli_surface.rs,cli_errors.rs}`.
   - **Design:** §4.1, §12.1, §14, DD-11.
@@ -425,9 +471,10 @@ Tests are written before implementation, so these public names and signatures ar
       - **Exit codes:** each `ErrorKind` maps to its code (unit test).
     - *RED:* `cli::main` returns success and prints nothing, so the assertions fail.
     - *GREEN:* all pass on all three OSes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** commit `22dd879`. The task-reviewer audit was in progress when the run stopped on a usage limit, so it isn't confirmed.
 
 ## Milestone 2: relay I/O (brief §17.2)
 
