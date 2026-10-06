@@ -12,7 +12,7 @@ last-reviewed: 2026-10-06
 
 **Phase status:** Approved
 
-**Approval:** Approved by David on 2026-10-05 ("approved"). Approve and execute: granted. The specification is Ready, and this is the build plan, written against the approved [requirements.md](requirements.md) and [design.md](design.md).
+**Approval:** Approved by David on 2026-10-05 ("approved"). Approve and execute: granted (spec marked Ready on 2026-10-05; current status is under Progress). This is the build plan, written against the approved [requirements.md](requirements.md) and [design.md](design.md).
 
 **Development mode:** test-first
 
