@@ -46,6 +46,9 @@ use crate::store::{Store, StoreError};
 /// The reaction a bot places the first time the turn cap suppresses it in a round (R19.3).
 const PAUSE: &str = "\u{23F8}\u{FE0F}";
 
+/// The reaction a bot places on a post it didn't publish (R51.1).
+const WARNING: &str = "\u{26A0}\u{FE0F}";
+
 /// How many threads the cache holds (design section 6.4).
 const THREAD_CACHE_CAPACITY: usize = 2_000;
 
@@ -124,6 +127,8 @@ pub(super) struct Core {
     pub(super) threads: ThreadCache,
     counters: DebugCounters,
     drift_logged: HashSet<Pubkey>,
+    /// When each bot last warned about an unmanaged post, in unix milliseconds (R51.2).
+    unmanaged_warned_at: HashMap<BotName, i64>,
     pub(super) publishes: JoinSet<()>,
     pub(super) running: HashMap<Uuid, RunningWake>,
     /// The events that triggered recent wakes, for the payload context fallback.
@@ -162,6 +167,7 @@ impl Core {
             threads: ThreadCache::default(),
             counters: DebugCounters::default(),
             drift_logged: HashSet::new(),
+            unmanaged_warned_at: HashMap::new(),
             publishes: JoinSet::new(),
             running: HashMap::new(),
             trigger_events: TriggerCache::default(),
@@ -220,6 +226,7 @@ impl Core {
                 return;
             }
         }
+        self.flag_unmanaged(ev);
         let thread = ev.root.as_ref().and_then(|root| self.load_thread(root));
         let (halts, counts) = match (
             self.halts(),
@@ -486,6 +493,45 @@ impl Core {
                 }
             }
         }
+    }
+
+    /// Flags a kind-9 event signed by a local bot's key that the router didn't publish
+    /// (design 6.3 step 2, R51): the in-memory counter grows for every such post, while the
+    /// warning itself (the reaction plus the log line) fires at most once per bot per hour.
+    /// The event still routes normally afterwards.
+    fn flag_unmanaged(&mut self, ev: &EnrichedEvent) {
+        if ev.in_event.kind != KIND_MESSAGE {
+            return;
+        }
+        let Some(bot) = self.local_bot(&ev.in_event.pubkey) else {
+            return;
+        };
+        match self.store.posts().exists(&ev.in_event.id) {
+            Ok(true) => {}
+            Ok(false) => {
+                self.counters.unmanaged_posts += 1;
+                let now_ms = self.clock.now().timestamp_millis();
+                let due = self
+                    .unmanaged_warned_at
+                    .get(&bot)
+                    .is_none_or(|at| now_ms.saturating_sub(*at) >= HOUR_MS);
+                if due {
+                    self.unmanaged_warned_at.insert(bot.clone(), now_ms);
+                    tracing::warn!(bot = %bot, event_id = %ev.in_event.id, "unmanaged post: the bot's key signed a post the router didn't publish");
+                    self.react(&bot, &ev.event.id, WARNING);
+                }
+            }
+            Err(error) => {
+                tracing::warn!(%error, event_id = %ev.in_event.id, "cannot check posts; skipping unmanaged detection");
+            }
+        }
+    }
+
+    /// The local bot holding `pubkey`, if any.
+    fn local_bot(&self, pubkey: &Pubkey) -> Option<BotName> {
+        self.roster.bots.iter().find_map(|(name, bot)| {
+            (bot.pubkey == *pubkey && self.local_bots.contains(name)).then(|| name.clone())
+        })
     }
 
     /// Moves the cursor for the receiving bot and relay to the event's `created_at` (R47.4).

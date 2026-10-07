@@ -990,7 +990,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
   - [ ] GREEN
   - [ ] REFACTOR
 
-- [ ] **4.2 Unmanaged-post detection**
+- [x] **4.2 Unmanaged-post detection**
   - **Objective:** Flag kind-9 events signed by a local bot key that the router didn't publish, without ever flagging its own echoes.
   - **Files:** the unmanaged step in `crates/buzz-router/src/core/apply.rs`; `crates/buzz-router/tests/engine_unmanaged.rs`.
   - **Design:** §6.3 (core step 2), DD-6, DD-12.
@@ -1007,9 +1007,9 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - A kind-40003 event from a bot key is not flagged.
     - *RED:* no ⚠️ is published.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 - [ ] **4.3 `status` and `wakes`**
   - **Objective:** Implement the status document (§12.2) behind `GET /v1/status` and `status [--json]`, and `wakes`, which reads SQLite directly.

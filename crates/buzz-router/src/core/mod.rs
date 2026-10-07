@@ -66,6 +66,8 @@ pub struct CoreDeps {
 pub struct DebugCounters {
     /// Budget suppressions per bot since start (R20.4, R21.4).
     pub budget_suppressed: BTreeMap<BotName, u64>,
+    /// Unmanaged posts detected since start (R51.1, DD-12).
+    pub unmanaged_posts: u64,
     /// The decisions `route` returned for the last event the core applied.
     pub last_decisions: Vec<Decision>,
 }

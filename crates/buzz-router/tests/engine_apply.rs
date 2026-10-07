@@ -279,7 +279,7 @@ async fn a_budget_suppression_increments_the_counter() {
         &root,
         base_secs() + 10,
     );
-    core.ingest(bot("A"), a1, Source::Live);
+    core.ingest(bot("A"), a1.clone(), Source::Live);
     core.flush().await;
 
     let counters = core.debug_counters().await;
@@ -289,10 +289,15 @@ async fn a_budget_suppression_increments_the_counter() {
         bot: bot("C"),
         why: SuppressWhy::Budget
     }));
-    assert!(
-        relay.published().is_empty(),
-        "a budget suppression reacts nothing"
+    // Task 4.2: A's post is unmanaged, so the only reaction is its ⚠️ warning.
+    let published = relay.published();
+    assert_eq!(
+        published.len(),
+        1,
+        "a budget suppression reacts nothing else"
     );
+    assert_eq!(published[0].content, "\u{26A0}\u{FE0F}");
+    assert_eq!(e_tags(&published[0]), vec![a1.id.to_hex()]);
 }
 
 /// The relay holds a discussion: the owner's `@everyone` root, A's reply, a historical
@@ -343,7 +348,7 @@ fn seed_history(relay: &support::FakeRelay) -> (Event, Event) {
 async fn a_rebuild_restores_the_thread_without_side_effects() {
     let (core, relay, store) = spawn_test_core();
     let (root, current) = seed_history(&relay);
-    core.ingest(bot("A"), current, Source::Live);
+    core.ingest(bot("A"), current.clone(), Source::Live);
     core.flush().await;
 
     let thread = store.threads().load(&id(&root)).unwrap().unwrap();
@@ -366,7 +371,12 @@ async fn a_rebuild_restores_the_thread_without_side_effects() {
         store.halts().list().unwrap().is_empty(),
         "a historical stop sets no halt"
     );
-    assert!(relay.published().is_empty(), "a rebuild publishes nothing");
+    // Task 4.2: the rebuild itself publishes nothing; applying the current event warns once,
+    // because A's post isn't in `posts`.
+    let published = relay.published();
+    assert_eq!(published.len(), 1, "a rebuild publishes nothing itself");
+    assert_eq!(published[0].content, "\u{26A0}\u{FE0F}");
+    assert_eq!(e_tags(&published[0]), vec![current.id.to_hex()]);
     assert!(store.events().is_processed(&id(&root)).unwrap());
 }
 
