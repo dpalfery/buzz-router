@@ -223,6 +223,8 @@ pub struct TestCoreOptions {
     pub adapter_toml: String,
     /// An adapter to use instead of `adapter`, such as a real `CommandAdapter`.
     pub real_adapter: Option<Arc<dyn Adapter>>,
+    /// The database file, instead of a fresh temporary one.
+    pub db_path: Option<std::path::PathBuf>,
 }
 
 impl Default for TestCoreOptions {
@@ -235,6 +237,7 @@ impl Default for TestCoreOptions {
             roster_extra: String::new(),
             adapter_toml: DEFAULT_ADAPTER_TOML.to_owned(),
             real_adapter: None,
+            db_path: None,
         }
     }
 }
@@ -248,8 +251,9 @@ pub fn spawn_test_core() -> (CoreHandle, FakeRelay, Store) {
 /// [`VirtualClock`] starting at [`base_time`]. Call it inside `#[tokio::test(start_paused = true)]`.
 /// The returned store is a separate connection to the same database, for seeding and assertions.
 pub fn spawn_test_core_with(options: TestCoreOptions) -> (CoreHandle, FakeRelay, Store) {
-    let dir = tempfile::tempdir().unwrap().keep();
-    let path = dir.join("state.sqlite3");
+    let path = options
+        .db_path
+        .unwrap_or_else(|| tempfile::tempdir().unwrap().keep().join("state.sqlite3"));
     let store = Store::open(&path).unwrap();
     if let Some(seed) = options.seed {
         seed(&store);

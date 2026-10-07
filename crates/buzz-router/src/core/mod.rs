@@ -12,6 +12,7 @@
 //! [`CoreHandle`] is the only way in. Its `flush` and `debug_counters` exist for tests.
 
 mod apply;
+pub mod control;
 mod dispatch;
 pub mod queue;
 mod timers;

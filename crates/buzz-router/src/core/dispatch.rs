@@ -47,7 +47,7 @@ const HOURGLASS: &str = "\u{231B}";
 /// The reaction for a failure (R36.5).
 const WARNING: &str = "\u{26A0}\u{FE0F}";
 /// The reaction for a killed wake (R36.4).
-const STOP: &str = "\u{1F6D1}";
+const STOP: &str = super::control::STOP_EMOJI;
 
 /// What a command prints to post nothing (R36.2).
 const NO_REPLY: &str = "[no-reply]";
@@ -344,14 +344,7 @@ impl Core {
             ApiRequest::Post { token, .. }
             | ApiRequest::Pass { token }
             | ApiRequest::Eta { token, .. } => token,
-            ApiRequest::Control(_) => {
-                return answer(
-                    reply,
-                    Err(ApiFailure::Internal(
-                        "control is not implemented".to_owned(),
-                    )),
-                )
-            }
+            ApiRequest::Control(control) => return self.admin_control(control, reply),
         };
         let wake = match self.store.wakes().find_by_token_hash(&token_hash(token)) {
             Ok(Some(wake)) => wake,

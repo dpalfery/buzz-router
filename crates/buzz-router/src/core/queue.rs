@@ -192,7 +192,7 @@ impl Core {
     }
 
     /// Marks a halted bot's queued wake killed, with no reaction (DD-15).
-    fn drop_queued(&self, wake: &WakeRow, now_ms: i64) {
+    pub(super) fn drop_queued(&self, wake: &WakeRow, now_ms: i64) {
         let outcome = serde_json::json!({ "dropped": true }).to_string();
         if let Err(error) =
             self.store

@@ -22,7 +22,7 @@ use router_core::config::{Limits, Roster, RouterConfig};
 use router_core::ids::{BotName, ChannelId, EventId, Pubkey};
 use router_core::quiet::quiet_set;
 use router_core::route::{
-    route, Decision, Diagnostic, Halts, InEvent, Priority, Reason, RouteResult, Snapshot,
+    route, Control, Decision, Diagnostic, Halts, InEvent, Priority, Reason, RouteResult, Snapshot,
     SuppressWhy, ThreadUpdate, WakeCounts, KIND_EDIT, KIND_MESSAGE,
 };
 use router_core::thread::{thread_position, RoundMode, ThreadPos, ThreadState};
@@ -30,6 +30,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use uuid::Uuid;
 
+use super::control::write_halts;
 use super::dispatch::{RunningWake, TriggerCache};
 use super::queue::{enqueue, Debounce, Trigger};
 use super::{CoreMsg, DebugCounters};
@@ -303,11 +304,16 @@ impl Core {
             created_at: ev.in_event.created_at,
             processed_at: Some(now.timestamp_millis()),
         };
+        let control = result
+            .control
+            .as_ref()
+            .map(|control| (control, &self.roster));
         let reactions = match commit_event(
             &mut self.store,
             &row,
             updated.as_ref(),
             &result.decisions,
+            control,
             &trigger_base,
             &debounce,
             now.timestamp_millis(),
@@ -338,10 +344,13 @@ impl Core {
         if has_wake {
             self.trigger_events.put(&ev.event);
         }
-        self.counters.last_decisions = result.decisions;
         for bot in reactions {
             self.react(&bot, &ev.event.id, PAUSE);
         }
+        if let Some(control) = &result.control {
+            self.control_effects(control, Some(&ev.event.id));
+        }
+        self.counters.last_decisions = result.decisions;
         self.advance_cursor(ev);
     }
 
@@ -606,13 +615,18 @@ impl TriggerBase {
     }
 }
 
-/// Applies one event in a single transaction (design 6.3, core step 5). Returns the bots that
-/// must react ⏸️ on the event.
+/// Applies one event in a single transaction (design 6.3, core step 5), including the halt rows
+/// of its control command. Returns the bots that must react ⏸️ on the event.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the parts of one apply transaction, all computed by the caller"
+)]
 fn commit_event(
     store: &mut Store,
     row: &EventRow,
     thread: Option<&ThreadState>,
     decisions: &[Decision],
+    control: Option<(&Control, &Roster)>,
     trigger: &TriggerBase,
     debounces: &BTreeMap<BotName, Debounce>,
     now_ms: i64,
@@ -669,6 +683,9 @@ fn commit_event(
             }
             _ => {}
         }
+    }
+    if let Some((control, roster)) = control {
+        write_halts(&tx, control, row.id.as_str(), now_ms, roster)?;
     }
     tx.commit()?;
     Ok(reactions)

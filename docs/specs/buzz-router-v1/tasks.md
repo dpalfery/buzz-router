@@ -861,7 +861,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
   - [x] GREEN
   - [x] REFACTOR
 
-- [ ] **3.7 Control execution**
+- [x] **3.7 Control execution**
   - **Objective:** Execute stop, resume and cancel from Buzz messages and from the admin API, including halt rows, kills, queue drops, reactions and partial resume.
   - **Files:** `crates/buzz-router/src/core/control.rs`, `crates/buzz-router/tests/engine_control.rs`.
   - **Design:** §6.7, DD-15.
@@ -886,9 +886,9 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
     - *Behaviour (persistence):* halts survive reopening the store.
     - *RED:* compile error, unresolved `buzz_router::core::control`; halt assertions fail.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 - [ ] **3.8 Stop end to end with real processes; CLI control and fallback**
   - **Objective:** Prove the real process-group kill on all three OSes. Implement `stop`, `resume` and `cancel` on the CLI, with the stop fallback when the API is unreachable.
