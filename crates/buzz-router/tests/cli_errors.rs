@@ -95,14 +95,11 @@ const INVALID_ROUTER_TOML: &str = "roster_path = = \"other.toml\"\n[[[\n";
 
 /// The commands that are not built yet, each once, with its flags (design 12.1). See the module
 /// documentation: a later task deletes its commands' rows.
-const NOT_YET_BUILT: [&[&str]; 8] = [
+const NOT_YET_BUILT: [&[&str]; 5] = [
     &["status", "--json"],
     &["stop", "--bot", "A", "--bot", "B"],
     &["resume", "--bot", "A"],
     &["cancel", "--bot", "A"],
-    &["post", "--text", "hi"],
-    &["pass"],
-    &["eta", "--text", "about 10 minutes"],
     &["wakes", "--bot", "A", "--state", "queued"],
 ];
 

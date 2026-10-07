@@ -4,9 +4,10 @@
 //! handler returns `Result<(), CliError>`. On `Err`, `main` writes one JSON line to stderr, nothing
 //! to stdout, and exits with the code of the error's kind.
 //!
-//! Only `roster check`, `route --replay`, `capture`, `keys` and `service` are built so far. The other commands are in the tree,
+//! Only `roster check`, `route --replay`, `capture`, `keys`, `service`, `post`, `pass` and `eta` are built so far. The other commands are in the tree,
 //! with their flags, and fail with `CliError::other("not implemented")` until their tasks.
 
+mod agent;
 mod capture;
 pub mod keys;
 mod replay;
@@ -383,14 +384,14 @@ fn dispatch(command: Command, dirs: &Dirs) -> Result<(), CliError> {
             },
             dirs,
         ),
+        Command::Post(args) => agent::post(args.text, args.text_file.as_deref()),
+        Command::Pass => agent::pass(),
+        Command::Eta(args) => agent::eta(args.text),
         Command::Run
         | Command::Status(_)
         | Command::Stop(_)
         | Command::Resume(_)
         | Command::Cancel(_)
-        | Command::Post(_)
-        | Command::Pass
-        | Command::Eta(_)
         | Command::Wakes(_) => Err(not_implemented()),
     }
 }

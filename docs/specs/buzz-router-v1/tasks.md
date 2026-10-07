@@ -910,7 +910,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
   - [ ] GREEN
   - [ ] REFACTOR
 
-- [ ] **3.9 Agent CLI: `post`, `pass`, `eta`**
+- [x] **3.9 Agent CLI: `post`, `pass`, `eta`**
   - **Objective:** Implement the agent-side commands that call the wake-token API.
   - **Files:** `crates/buzz-router/src/cli/agent.rs`, `crates/buzz-router/tests/cli_agent.rs`.
   - **Design:** §12.1, §14.
@@ -934,9 +934,9 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - A halted bot gives exit 4 with `"halted"` in the message.
     - *RED:* the commands return "not implemented".
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 - [ ] **3.10 `run` wiring**
   - **Objective:** Wire the daemon startup (§6.2 steps 1–5 and 7): rustls provider, config, store, admin token, keys, halts, core, ingest, API listeners and relay connections.
