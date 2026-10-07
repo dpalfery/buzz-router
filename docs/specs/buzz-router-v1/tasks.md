@@ -1174,7 +1174,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
   - [x] Workflow updated
   - [ ] Green run recorded (pending CI on the merged branch; all new checks validated locally)
 
-- [ ] **6.4 Release workflow** *(no-test task)*
+- [x] **6.4 Release workflow** *(no-test task)*
   - **Objective:** Build and attach the five release binaries.
   - **Files:** `.github/workflows/release.yml`.
   - **Design:** §15.
@@ -1187,8 +1187,8 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
     3. Packages `buzz-router-<version>-<target>.tar.gz`, or `.zip` for Windows.
     4. Uploads with `gh release upload`.
   - **Replacement validation:** a `workflow_dispatch` dry run producing the five artifacts. Record the run URL and the artifact names.
-  - [ ] Workflow written
-  - [ ] Dry run recorded
+  - [x] Workflow written
+  - [ ] Dry run recorded (needs a `workflow_dispatch` run after merge; packaging logic dry-run locally)
 
 ## Milestone 7: end-to-end acceptance (brief §15.3)
 
