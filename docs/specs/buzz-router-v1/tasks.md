@@ -1054,7 +1054,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
 
 ## Milestone 5: webhook adapter (brief §17.5)
 
-- [ ] **5.1 Webhook adapter (async and sync)**
+- [x] **5.1 Webhook adapter (async and sync)**
   - **Objective:** Implement `WebhookAdapter`: HMAC signing, async with a 10 s timeout, sync until the deadline, failure mapping, and `cancel_url`.
   - **Files:** `crates/buzz-router/src/adapter/webhook.rs`, `crates/buzz-router/tests/adapter_webhook.rs`.
   - **Design:** §7.2, DD-16.
@@ -1073,9 +1073,9 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
     - *Behaviour (cancel):* `cancel_url` receives a POST with `{"wake_id"}` and the signature headers, and its errors are logged.
     - *RED:* compile error, unresolved `buzz_router::adapter::webhook::WebhookAdapter`.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 - [ ] **5.2 Webhook wakes through the engine and the tailnet API**
   - **Objective:** Select adapters per bot, use `public_url` as the payload's API URL, end async wakes at the first post or pass, and stop webhook wakes.

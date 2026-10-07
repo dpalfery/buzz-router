@@ -5,6 +5,7 @@
 //! core cancels a run through its [`CancellationToken`].
 
 pub mod command;
+pub mod webhook;
 
 use chrono::{DateTime, Utc};
 use futures_util::future::BoxFuture;

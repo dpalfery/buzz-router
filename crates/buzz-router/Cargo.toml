@@ -75,6 +75,8 @@ tokio-util = { workspace = true }
 getrandom = { workspace = true }
 # The command adapter (task 3.5): process groups (Unix) and Job Objects (Windows).
 command-group = { workspace = true }
+# The webhook adapter (task 5.1): request signing.
+hmac = { workspace = true }
 
 [dev-dependencies]
 sha2 = { workspace = true }
