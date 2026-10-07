@@ -8,3 +8,6 @@ admin.token
 /roster.toml
 .env
 .DS_Store
+
+# CodeGraph index: machine-local, rebuilt from source with `codegraph init`.
+.codegraph/

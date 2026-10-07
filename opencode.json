@@ -8,6 +8,11 @@
       "environment": {
         "KYBER_WEAVE_REPO_ROOT": "."
       }
+    },
+    "codegraph": {
+      "type": "local",
+      "command": ["codegraph", "serve", "--mcp", "--path", "."],
+      "enabled": true
     }
   }
 }
