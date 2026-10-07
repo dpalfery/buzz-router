@@ -36,7 +36,11 @@ pub async fn mock_relay() -> (String, Arc<Mutex<BTreeSet<String>>>) {
             };
             let seen = seen.clone();
             tokio::spawn(async move {
-                // REST calls to the same port fail the handshake, which the router tolerates.
+                let mut head = [0_u8; 4];
+                if tcp.peek(&mut head).await.is_ok() && &head == b"POST" {
+                    answer_rest_with_nothing(tcp).await;
+                    return;
+                }
                 let Ok(ws) = tokio_tungstenite::accept_async(tcp).await else {
                     return;
                 };
@@ -71,6 +75,37 @@ pub async fn mock_relay() -> (String, Arc<Mutex<BTreeSet<String>>>) {
         }
     });
     (url, authed)
+}
+
+/// Answers one REST request (`POST /query` or `/events`) with `200 []`: no channels, no history.
+async fn answer_rest_with_nothing(mut tcp: tokio::net::TcpStream) {
+    use tokio::io::AsyncWriteExt;
+    let mut request = Vec::new();
+    let mut chunk = [0_u8; 4096];
+    let body_start = loop {
+        if let Some(at) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+            break at + 4;
+        }
+        match tcp.read(&mut chunk).await {
+            Ok(0) | Err(_) => return,
+            Ok(n) => request.extend_from_slice(&chunk[..n]),
+        }
+    };
+    let head = String::from_utf8_lossy(&request[..body_start]).to_ascii_lowercase();
+    let length = head
+        .lines()
+        .find_map(|line| line.strip_prefix("content-length:"))
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .unwrap_or(0);
+    while request.len() < body_start + length {
+        match tcp.read(&mut chunk).await {
+            Ok(0) | Err(_) => return,
+            Ok(n) => request.extend_from_slice(&chunk[..n]),
+        }
+    }
+    let response = "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 2\r\nconnection: close\r\n\r\n[]";
+    let _ = tcp.write_all(response.as_bytes()).await;
+    let _ = tcp.shutdown().await;
 }
 
 /// A config and data directory pair for the binary.

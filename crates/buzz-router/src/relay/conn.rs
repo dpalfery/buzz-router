@@ -620,7 +620,8 @@ async fn dial_and_serve_synced(
 }
 
 /// Discovers, subscribes, backfills and then streams one connection.
-/// Discovery, subscription and backfill rerun on every reconnect.
+/// Discovery, subscription and backfill rerun on every reconnect. A failed
+/// discovery ends the connection so the caller redials.
 async fn sync_and_serve<Sink, Stream>(
     state: &SyncState,
     sink: &mut Sink,
@@ -640,8 +641,8 @@ async fn sync_and_serve<Sink, Stream>(
             channels
         }
         Err(error) => {
-            tracing::warn!(%error, bot = %state.bot, "channel discovery failed; serving without subscriptions");
-            Vec::new()
+            tracing::warn!(%error, bot = %state.bot, "channel discovery failed; redialling");
+            return;
         }
     };
     if !subscribe_all(sink, &channels, connect_time).await {

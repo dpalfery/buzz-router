@@ -1273,3 +1273,52 @@ async fn a_failed_channel_backfill_redials() {
     assert_eq!(backfilled.event.id, history.id);
     assert_eq!(backfilled.source, Source::Backfill);
 }
+
+// --- Discovery failures (review finding #5) ------------------------------------
+
+/// A failed discovery must not leave the bot connected with no subscriptions:
+/// the connection drops and redials, and the retry subscribes.
+#[tokio::test]
+async fn a_failed_discovery_redials() {
+    let rest: SharedRest = Arc::new(Mutex::new(RestState::new()));
+    {
+        let mut guard = rest.lock().unwrap();
+        let bot_hex = keys("A").public_key().to_hex();
+        guard.memberships = vec![(bot_hex, CHANNEL_A.to_string())];
+        guard.metadata = vec![(CHANNEL_A.to_string(), "one".to_string(), false)];
+        guard.discovery_failures = 1;
+    }
+    let (rest_url, _port) = start_rest_mock(rest.clone()).await;
+    let (ws_listener, ws_url) = bind_ws().await;
+    let (_seed, store, _dir) = file_stores();
+    let _sink_rx = spawn_synced(&ws_url, &rest_url, store);
+
+    let (mut sink, mut stream) = accept_split(&ws_listener).await;
+    server_complete_auth(
+        &mut sink,
+        &mut stream,
+        keys("A").public_key(),
+        &ws_url,
+        "chal-d1",
+    )
+    .await;
+
+    let (mut sink, mut stream) =
+        tokio::time::timeout(Duration::from_secs(20), accept_split(&ws_listener))
+            .await
+            .expect("the client redials after the failed discovery");
+    server_complete_auth(
+        &mut sink,
+        &mut stream,
+        keys("A").public_key(),
+        &ws_url,
+        "chal-d2",
+    )
+    .await;
+    let req = recv_req(&mut stream).await;
+    assert_eq!(
+        req.sub_id,
+        format!("ch-{CHANNEL_A}"),
+        "the retry subscribes"
+    );
+}
