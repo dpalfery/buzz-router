@@ -750,7 +750,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
   - [x] GREEN
   - [x] REFACTOR
 
-- [ ] **3.3 Wake queue, coalescing, debounce and scheduling**
+- [x] **3.3 Wake queue, coalescing, debounce and scheduling**
   - **Objective:** Implement the per-bot queue, coalescing, A9 attributes, `dispatch_after`, and `schedule()` with priority, FIFO and `max_concurrent`.
   - **Files:** `crates/buzz-router/src/core/queue.rs`, `crates/buzz-router/tests/{engine_debounce.rs,engine_coalesce.rs,engine_queue_order.rs}`.
   - **Design:** §6.5, DD-2.
@@ -769,9 +769,9 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - With `max_concurrent = 1` and queued Bot, Human and Owner wakes, the dispatch order is Owner, Human, Bot. Within one priority it's FIFO. With `max_concurrent = 2`, two wakes run at once.
     - *RED:* compile error, unresolved `buzz_router::core::queue`; dispatch never happens.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 - [ ] **3.4 Dispatch, lifecycle, timers and endings**
   - **Objective:** Implement the dispatch steps, the `Adapter` trait, payload context building, typing every 3 s, the deadline and status-note timers, and the endings table with its reactions.

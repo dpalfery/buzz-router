@@ -12,21 +12,27 @@
     reason = "helpers in a shared test module fail the test by panicking; clippy.toml exempts only #[test] functions"
 )]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
-use buzz_router::clock::VirtualClock;
+use buzz_router::adapter::{Adapter, AdapterEvent, WakeContext};
+use buzz_router::clock::{Clock, VirtualClock};
 use buzz_router::core::{spawn_core, CoreDeps, CoreHandle};
 use buzz_router::relay::{RelayError, RelayPort};
 use buzz_router::store::Store;
 use buzz_sdk::ThreadRef;
 use chrono::{DateTime, TimeZone, Utc};
+use futures_util::future::BoxFuture;
 use nostr::{Event, EventBuilder, Filter, Keys, Kind, SecretKey, Tag, Timestamp};
 use router_core::config::{parse_roster, parse_router};
+use router_core::ids::EventId;
 use router_core::ids::{BotName, ChannelId};
+use router_core::payload::WakePayload;
 use sha2::{Digest, Sha256};
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 /// Deterministic keys for `name`: the secret is `sha256("buzz-router-fixture:" + name)`.
@@ -173,6 +179,8 @@ pub struct TestCoreOptions {
     pub max_concurrent: u32,
     /// Runs against the database before the core starts.
     pub seed: Option<Seed>,
+    /// The adapter every bot uses.
+    pub adapter: FakeAdapter,
 }
 
 impl Default for TestCoreOptions {
@@ -181,6 +189,7 @@ impl Default for TestCoreOptions {
             limits: String::new(),
             max_concurrent: 1,
             seed: None,
+            adapter: FakeAdapter::new(vec![Step::Exit(0)]),
         }
     }
 }
@@ -202,14 +211,18 @@ pub fn spawn_test_core_with(options: TestCoreOptions) -> (CoreHandle, FakeRelay,
     }
     let roster = parse_roster(&roster_toml(&options.limits)).unwrap();
     let config = parse_router(&router_toml(options.max_concurrent), &roster).unwrap();
+    let clock: Arc<dyn Clock> = Arc::new(VirtualClock::new(base_time()));
+    let adapter: Arc<dyn Adapter> = Arc::new(options.adapter.with_clock(clock.clone()));
     let relay = FakeRelay::new();
     let mut relays: BTreeMap<BotName, Arc<dyn RelayPort>> = BTreeMap::new();
     let mut keys_by_bot = BTreeMap::new();
     let mut memberships = BTreeMap::new();
+    let mut adapters = BTreeMap::new();
     for name in BOTS {
         let bot = BotName::new(name).unwrap();
         relays.insert(bot.clone(), Arc::new(relay.clone()));
         keys_by_bot.insert(bot.clone(), keys(name));
+        adapters.insert(bot.clone(), adapter.clone());
         memberships.insert(bot, BTreeSet::from([ChannelId::from(channel())]));
     }
     let handle = spawn_core(CoreDeps {
@@ -217,12 +230,137 @@ pub fn spawn_test_core_with(options: TestCoreOptions) -> (CoreHandle, FakeRelay,
         ingest_store: Store::open_read_only(&path).unwrap(),
         roster,
         config,
-        clock: Arc::new(VirtualClock::new(base_time())),
+        clock,
         relays,
         keys: keys_by_bot,
         memberships,
+        adapters,
     });
     (handle, relay, store)
+}
+
+/// One step of a [`FakeAdapter`] script (design 16.2).
+#[derive(Debug, Clone)]
+pub enum Step {
+    /// Sleep for the duration.
+    Wait(Duration),
+    /// End with exit code `code` and no stdout.
+    Exit(i32),
+    /// End with exit code 0 and `text` on stdout.
+    Stdout(String),
+    /// Run until cancelled.
+    Hang,
+}
+
+/// One call of [`FakeAdapter::run`].
+#[derive(Debug, Clone)]
+pub struct Dispatch {
+    /// The wake.
+    pub wake_id: Uuid,
+    /// The bot woken.
+    pub bot: BotName,
+    /// The thread root.
+    pub root: EventId,
+    /// The trigger event ids.
+    pub triggers: Vec<EventId>,
+    /// The virtual wall-clock time of the call.
+    pub at: DateTime<Utc>,
+}
+
+#[derive(Default)]
+struct FakeAdapterState {
+    scripts: VecDeque<Vec<Step>>,
+    dispatches: Vec<Dispatch>,
+}
+
+/// An [`Adapter`] that runs a script per wake and records every dispatch. Clones share state.
+#[derive(Clone)]
+pub struct FakeAdapter {
+    default_script: Vec<Step>,
+    clock: Arc<dyn Clock>,
+    state: Arc<Mutex<FakeAdapterState>>,
+}
+
+impl FakeAdapter {
+    /// Runs `script` for every wake.
+    pub fn new(script: Vec<Step>) -> Self {
+        Self {
+            default_script: script,
+            clock: Arc::new(VirtualClock::new(base_time())),
+            state: Arc::default(),
+        }
+    }
+
+    /// Runs the next of `scripts` for each wake, then the default script.
+    pub fn push_script(&self, script: Vec<Step>) {
+        self.state.lock().unwrap().scripts.push_back(script);
+    }
+
+    /// Every dispatch so far, in order.
+    pub fn dispatches(&self) -> Vec<Dispatch> {
+        self.state.lock().unwrap().dispatches.clone()
+    }
+
+    fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
+        self.clock = clock;
+        self
+    }
+}
+
+impl Adapter for FakeAdapter {
+    fn run(
+        &self,
+        ctx: WakeContext,
+        _payload: WakePayload,
+        cancel: CancellationToken,
+    ) -> BoxFuture<'static, AdapterEvent> {
+        let script = {
+            let mut state = self.state.lock().unwrap();
+            state.dispatches.push(Dispatch {
+                wake_id: ctx.wake_id,
+                bot: ctx.bot.clone(),
+                root: ctx.root.clone(),
+                triggers: ctx.trigger_ids.clone(),
+                at: self.clock.now(),
+            });
+            state
+                .scripts
+                .pop_front()
+                .unwrap_or_else(|| self.default_script.clone())
+        };
+        Box::pin(async move {
+            for step in script {
+                match step {
+                    Step::Wait(duration) => {
+                        tokio::select! {
+                            () = tokio::time::sleep(duration) => {}
+                            () = cancel.cancelled() => return AdapterEvent::Failed("cancelled".into()),
+                        }
+                    }
+                    Step::Exit(code) => {
+                        return AdapterEvent::Exited {
+                            code: Some(code),
+                            stdout: None,
+                        }
+                    }
+                    Step::Stdout(text) => {
+                        return AdapterEvent::Exited {
+                            code: Some(0),
+                            stdout: Some(text),
+                        }
+                    }
+                    Step::Hang => {
+                        cancel.cancelled().await;
+                        return AdapterEvent::Failed("cancelled".into());
+                    }
+                }
+            }
+            AdapterEvent::Exited {
+                code: Some(0),
+                stdout: None,
+            }
+        })
+    }
 }
 
 /// A hook called with each event as `FakeRelay` receives a publish, before it is recorded.

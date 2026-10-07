@@ -225,6 +225,35 @@ impl<'c> Wakes<'c> {
         Ok(())
     }
 
+    /// Moves the wake to `round_id`, the thread's current round at dispatch (design section 6.6).
+    pub fn set_round(&self, id: &Uuid, round_id: &EventId) -> Result<(), StoreError> {
+        self.conn.execute(
+            "UPDATE wakes SET round_id = ?2 WHERE id = ?1",
+            params![id.to_string(), round_id.as_str()],
+        )?;
+        Ok(())
+    }
+
+    /// Every queued wake, oldest first.
+    pub fn queued(&self) -> Result<Vec<WakeRow>, StoreError> {
+        let mut statement = self.conn.prepare(&format!(
+            "SELECT {COLUMNS} FROM wakes WHERE state = 'queued' ORDER BY created_at, id"
+        ))?;
+        let raw = statement
+            .query_map([], RawWake::from_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        raw.into_iter().map(RawWake::into_row).collect()
+    }
+
+    /// The earliest `dispatch_after` of a queued wake that is later than `after_ms`.
+    pub fn next_dispatch_after(&self, after_ms: i64) -> Result<Option<i64>, StoreError> {
+        Ok(self.conn.query_row(
+            "SELECT MIN(dispatch_after) FROM wakes WHERE state = 'queued' AND dispatch_after > ?1",
+            params![after_ms],
+            |row| row.get(0),
+        )?)
+    }
+
     /// Dispatched wakes per bot in one round of a thread (design section 6.3, rebuild step 3).
     pub fn started_in_round(
         &self,

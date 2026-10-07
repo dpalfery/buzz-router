@@ -18,7 +18,7 @@ use chrono::{DateTime, Utc};
 use nostr::nips::nip19::ToBech32;
 use nostr::Event;
 use router_core::classify::{classify, AuthorClass};
-use router_core::config::{Roster, RouterConfig};
+use router_core::config::{Limits, Roster, RouterConfig};
 use router_core::ids::{BotName, ChannelId, EventId, Pubkey};
 use router_core::quiet::quiet_set;
 use router_core::route::{
@@ -26,19 +26,20 @@ use router_core::route::{
     SuppressWhy, ThreadUpdate, WakeCounts, KIND_EDIT, KIND_MESSAGE,
 };
 use router_core::thread::{thread_position, RoundMode, ThreadPos, ThreadState};
-use rusqlite::Connection;
-use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use uuid::Uuid;
 
+use super::queue::{enqueue, Debounce, RunningWake, Trigger};
 use super::{CoreMsg, DebugCounters};
+use crate::adapter::Adapter;
 use crate::clock::Clock;
 use crate::ingest::EnrichedEvent;
 use crate::relay::RelayPort;
 use crate::store::events::{EventClass, EventRow, Events};
 use crate::store::halts::HaltScope;
 use crate::store::threads::{Threads, Turns};
-use crate::store::wakes::{WakeRow, WakeState, Wakes};
+use crate::store::wakes::Wakes;
 use crate::store::{Store, StoreError};
 
 /// The reaction a bot places the first time the turn cap suppresses it in a round (R19.3).
@@ -71,35 +72,10 @@ pub fn wake_counts(
         .collect()
 }
 
-/// One element of `wakes.triggers` (design section 6.5).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(super) struct Trigger {
-    /// The message that triggered the wake; for an edit, the edited message.
-    pub event_id: String,
-    /// The kind-40003 event, for an edit trigger.
-    pub edit_id: Option<String>,
-    /// The author class: `owner`, `bot`, `foreign_bot` or `human`.
-    pub class: String,
-    /// The author's display name.
-    pub author: String,
-    /// Why the bot is woken.
-    pub reason: Reason,
-    /// How the trigger queues.
-    pub priority: Priority,
-    /// Whether the trigger waits out the discussion debounce.
-    pub debounce: bool,
-    /// The round mode: `direct` or `discussion`.
-    pub mode: String,
-    /// The event's `created_at`, in unix seconds.
-    pub created_at: i64,
-    /// When ingest received the event, in unix milliseconds.
-    pub received_at_ms: i64,
-}
-
 /// The in-memory thread cache: least recently used threads are evicted past the capacity, and
 /// reload from the store (design section 6.4).
 #[derive(Default)]
-struct ThreadCache {
+pub(super) struct ThreadCache {
     entries: HashMap<EventId, (ThreadState, u64)>,
     tick: u64,
 }
@@ -114,7 +90,7 @@ impl ThreadCache {
         })
     }
 
-    fn put(&mut self, state: ThreadState) {
+    pub(super) fn put(&mut self, state: ThreadState) {
         self.tick += 1;
         self.entries
             .insert(state.root_id.clone(), (state, self.tick));
@@ -133,48 +109,61 @@ impl ThreadCache {
 
 /// The core actor's state.
 pub(super) struct Core {
-    store: Store,
-    roster: Roster,
-    config: RouterConfig,
+    pub(super) store: Store,
+    pub(super) roster: Roster,
+    pub(super) config: RouterConfig,
     local_bots: BTreeSet<BotName>,
-    clock: Arc<dyn Clock>,
+    pub(super) clock: Arc<dyn Clock>,
     relays: BTreeMap<BotName, Arc<dyn RelayPort>>,
     keys: BTreeMap<BotName, nostr::Keys>,
     memberships: BTreeMap<BotName, BTreeSet<ChannelId>>,
-    threads: ThreadCache,
+    pub(super) adapters: BTreeMap<BotName, Arc<dyn Adapter>>,
+    pub(super) threads: ThreadCache,
     counters: DebugCounters,
     drift_logged: HashSet<Pubkey>,
     publishes: JoinSet<()>,
+    pub(super) running: HashMap<Uuid, RunningWake>,
+    /// When the core received each thread's latest roster-bot post, in unix milliseconds.
+    last_bot_post: HashMap<EventId, i64>,
+    pub(super) self_tx: mpsc::UnboundedSender<CoreMsg>,
+}
+
+/// What the core actor is built from, besides its own sender.
+pub(super) struct CoreParts {
+    pub store: Store,
+    pub roster: Roster,
+    pub config: RouterConfig,
+    pub clock: Arc<dyn Clock>,
+    pub relays: BTreeMap<BotName, Arc<dyn RelayPort>>,
+    pub keys: BTreeMap<BotName, nostr::Keys>,
+    pub memberships: BTreeMap<BotName, BTreeSet<ChannelId>>,
+    pub adapters: BTreeMap<BotName, Arc<dyn Adapter>>,
 }
 
 impl Core {
-    pub(super) fn new(
-        store: Store,
-        roster: Roster,
-        config: RouterConfig,
-        clock: Arc<dyn Clock>,
-        relays: BTreeMap<BotName, Arc<dyn RelayPort>>,
-        keys: BTreeMap<BotName, nostr::Keys>,
-        memberships: BTreeMap<BotName, BTreeSet<ChannelId>>,
-    ) -> Self {
-        let local_bots = config.bots.keys().cloned().collect();
+    pub(super) fn new(parts: CoreParts, self_tx: mpsc::UnboundedSender<CoreMsg>) -> Self {
+        let local_bots = parts.config.bots.keys().cloned().collect();
         Self {
-            store,
-            roster,
-            config,
+            store: parts.store,
+            roster: parts.roster,
+            config: parts.config,
             local_bots,
-            clock,
-            relays,
-            keys,
-            memberships,
+            clock: parts.clock,
+            relays: parts.relays,
+            keys: parts.keys,
+            memberships: parts.memberships,
+            adapters: parts.adapters,
             threads: ThreadCache::default(),
             counters: DebugCounters::default(),
             drift_logged: HashSet::new(),
             publishes: JoinSet::new(),
+            running: HashMap::new(),
+            last_bot_post: HashMap::new(),
+            self_tx,
         }
     }
 
-    /// Handles one message.
+    /// Handles one message, then schedules the queue.
     pub(super) async fn handle(&mut self, message: CoreMsg) {
         while self.publishes.try_join_next().is_some() {}
         match message {
@@ -183,15 +172,20 @@ impl Core {
             CoreMsg::Memberships { bot, channels } => {
                 self.memberships.insert(bot, channels);
             }
+            CoreMsg::WakeEnded { wake_id, event } => self.wake_ended(wake_id, event),
             CoreMsg::Flush(reply) => {
+                self.schedule();
                 while self.publishes.join_next().await.is_some() {}
                 let _ = reply.send(());
+                return;
             }
             CoreMsg::DebugCounters(reply) => {
                 let _ = reply.send(self.counters.clone());
+                return;
             }
-            CoreMsg::Shutdown => {}
+            CoreMsg::Shutdown => return,
         }
+        self.schedule();
     }
 
     /// The core steps for one event (design 6.3, core steps 1 and 3 to 7).
@@ -242,6 +236,27 @@ impl Core {
             updated_thread(thread, root, &ev.in_event, &result.thread_update, has_wake)
         });
         let class = classify(&ev.in_event, &self.roster);
+        let received_ms = ev.received_at.timestamp_millis();
+        self.prune_bot_posts(now.timestamp_millis());
+        if let (AuthorClass::Bot(_), Some(root), KIND_MESSAGE) =
+            (&class, &ev.root, ev.in_event.kind)
+        {
+            self.last_bot_post.insert(root.clone(), received_ms);
+        }
+        let last_bot_post = ev
+            .root
+            .as_ref()
+            .and_then(|root| self.last_bot_post.get(root).copied());
+        let debounce: BTreeMap<BotName, Debounce> = result
+            .decisions
+            .iter()
+            .filter_map(|decision| match decision {
+                Decision::Wake { bot, .. } => {
+                    Some((bot.clone(), Debounce::new(&self.limits(bot), last_bot_post)))
+                }
+                _ => None,
+            })
+            .collect();
         let trigger_base = TriggerBase {
             event_id: ev
                 .edit_target
@@ -252,7 +267,7 @@ impl Core {
             author: author_name(&ev.in_event.pubkey, &class, &self.roster),
             mode: result.wake_mode,
             created_at: ev.in_event.created_at,
-            received_at_ms: ev.received_at.timestamp_millis(),
+            received_at_ms: received_ms,
         };
         let row = EventRow {
             id: id.clone(),
@@ -270,6 +285,7 @@ impl Core {
             updated.as_ref(),
             &result.decisions,
             &trigger_base,
+            &debounce,
             now.timestamp_millis(),
         ) {
             Ok(reactions) => reactions,
@@ -372,7 +388,7 @@ impl Core {
     }
 
     /// The thread at `root`, from the cache or the store.
-    fn load_thread(&mut self, root: &EventId) -> Option<ThreadState> {
+    pub(super) fn load_thread(&mut self, root: &EventId) -> Option<ThreadState> {
         if let Some(state) = self.threads.get(root) {
             return Some(state);
         }
@@ -389,8 +405,22 @@ impl Core {
         }
     }
 
+    /// Forgets bot posts older than the longest debounce maximum: a debounced wake is due by its
+    /// first trigger plus that maximum, so they can no longer move a `dispatch_after`.
+    fn prune_bot_posts(&mut self, now_ms: i64) {
+        let horizon_ms = self
+            .roster
+            .bots
+            .values()
+            .map(|bot| Debounce::new(&bot.limits, None).max_ms)
+            .max()
+            .unwrap_or(0);
+        self.last_bot_post
+            .retain(|_, at| now_ms.saturating_sub(*at) <= horizon_ms);
+    }
+
     /// The current halts, re-read from the `halts` table so CLI-written halts count.
-    fn halts(&self) -> Result<Halts, StoreError> {
+    pub(super) fn halts(&self) -> Result<Halts, StoreError> {
         let mut halts = Halts {
             all: false,
             bots: BTreeSet::new(),
@@ -518,8 +548,15 @@ fn commit_event(
     thread: Option<&ThreadState>,
     decisions: &[Decision],
     trigger: &TriggerBase,
+    debounces: &BTreeMap<BotName, Debounce>,
     now_ms: i64,
 ) -> Result<Vec<BotName>, StoreError> {
+    let debounce_of = |bot: &BotName| {
+        debounces
+            .get(bot)
+            .copied()
+            .unwrap_or_else(|| Debounce::new(&Limits::default(), None))
+    };
     let tx = store.connection_mut().transaction()?;
     let events = Events::new(&tx);
     events.insert_or_ignore(row)?;
@@ -545,6 +582,7 @@ fn commit_event(
                 bot,
                 thread,
                 &trigger.trigger(*reason, *priority, *debounce),
+                debounce_of(bot),
                 now_ms,
             )?,
             (
@@ -568,57 +606,6 @@ fn commit_event(
     }
     tx.commit()?;
     Ok(reactions)
-}
-
-/// Queues `trigger` for `bot` in `thread`: appended to the queued wake for (bot, root) if there
-/// is one, else a new queued wake in the thread's current round (design 6.5).
-fn enqueue(
-    conn: &Connection,
-    bot: &BotName,
-    thread: &ThreadState,
-    trigger: &Trigger,
-    now_ms: i64,
-) -> Result<(), StoreError> {
-    let wakes = Wakes::new(conn);
-    let encode = |triggers: &[Trigger]| {
-        serde_json::to_string(triggers).map_err(|error| StoreError::Corrupt {
-            column: "wakes.triggers",
-            message: error.to_string(),
-        })
-    };
-    if let Some(queued) = wakes.find_queued(bot, &thread.root_id)? {
-        let mut triggers: Vec<Trigger> =
-            serde_json::from_str(&queued.triggers).map_err(|error| StoreError::Corrupt {
-                column: "wakes.triggers",
-                message: error.to_string(),
-            })?;
-        triggers.push(trigger.clone());
-        return wakes.update_queued(
-            &queued.id,
-            &queued.reason,
-            &queued.priority,
-            &encode(&triggers)?,
-            queued.dispatch_after,
-        );
-    }
-    wakes.insert(&WakeRow {
-        id: Uuid::new_v4(),
-        bot: bot.clone(),
-        root_id: thread.root_id.clone(),
-        round_id: thread.round_id.clone(),
-        reason: snake(&trigger.reason),
-        priority: snake(&trigger.priority),
-        triggers: encode(std::slice::from_ref(trigger))?,
-        state: WakeState::Queued,
-        token_hash: None,
-        attempt: 1,
-        created_at: now_ms,
-        dispatch_after: now_ms,
-        started_at: None,
-        deadline: None,
-        ended_at: None,
-        outcome: None,
-    })
 }
 
 /// Stores a rebuilt thread with its events and turn counts (design 6.3, RebuildThread steps 2
@@ -730,14 +717,6 @@ fn author_name(pubkey: &Pubkey, class: &AuthorClass, roster: &Roster) -> String 
                 |npub| npub.chars().take(12).collect(),
             ),
     }
-}
-
-/// The snake_case JSON string of a serialisable enum value, such as `mention` or `owner`.
-fn snake<T: Serialize>(value: &T) -> String {
-    serde_json::to_value(value)
-        .ok()
-        .and_then(|value| value.as_str().map(str::to_owned))
-        .unwrap_or_default()
 }
 
 /// The `router_core` view of a stored-history event in `channel`.

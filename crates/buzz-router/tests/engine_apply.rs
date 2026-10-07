@@ -21,7 +21,7 @@ use router_core::thread::{RoundMode, ThreadState};
 use serde_json::{json, Value};
 use support::{
     base_secs, base_time, channel, keys, reply, spawn_test_core, spawn_test_core_with, top_level,
-    TestCoreOptions, RELAY_URL,
+    FakeAdapter, Step, TestCoreOptions, RELAY_URL,
 };
 use uuid::Uuid;
 
@@ -109,8 +109,15 @@ fn e_tags(event: &Event) -> Vec<String> {
 
 #[tokio::test(start_paused = true)]
 async fn an_owner_mention_queues_a_wake_and_starts_a_round() {
-    let (core, _relay, store) = spawn_test_core();
+    let (core, _relay, store) = spawn_test_core_with(TestCoreOptions {
+        adapter: FakeAdapter::new(vec![Step::Hang]),
+        ..TestCoreOptions::default()
+    });
     let owner = keys("owner");
+    // A hanging wake in another thread fills A's only slot, so the next wake stays queued.
+    let busy = top_level(&owner, channel(), "@A busy", base_secs());
+    core.ingest(bot("A"), busy, Source::Live);
+    core.flush().await;
     let o1 = top_level(&owner, channel(), "@A status?", base_secs());
     core.ingest(bot("A"), o1.clone(), Source::Live);
     core.flush().await;

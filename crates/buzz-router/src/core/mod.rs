@@ -5,12 +5,14 @@
 //! - the **ingest task**, which runs every raw event through [`Ingest`] in arrival order and
 //!   forwards the results;
 //! - the **core actor**, which owns the SQLite write connection and all mutable state, and
-//!   serialises every mutation. Its loop waits for a message or a 1-second tick, so wall-clock
-//!   deadlines are re-checked after an OS sleep.
+//!   serialises every mutation. Its loop waits for a message, the next queued wake falling due,
+//!   or a 1-second tick, so wall-clock deadlines are re-checked after an OS sleep. After each
+//!   message or timer it runs the scheduler ([`queue`]).
 //!
 //! [`CoreHandle`] is the only way in. Its `flush` and `debug_counters` exist for tests.
 
 mod apply;
+pub mod queue;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -20,7 +22,9 @@ use router_core::config::{Roster, RouterConfig};
 use router_core::ids::{BotName, ChannelId, EventId};
 use router_core::route::Decision;
 use tokio::sync::{mpsc, oneshot};
+use uuid::Uuid;
 
+use crate::adapter::{Adapter, AdapterEvent};
 use crate::clock::Clock;
 use crate::ingest::{EnrichedEvent, Ingest, IngestOutput, Source};
 use crate::relay::RelayPort;
@@ -49,6 +53,8 @@ pub struct CoreDeps {
     pub keys: BTreeMap<BotName, nostr::Keys>,
     /// Each local bot's channel memberships, as discovery last reported them.
     pub memberships: BTreeMap<BotName, BTreeSet<ChannelId>>,
+    /// Each local bot's adapter.
+    pub adapters: BTreeMap<BotName, Arc<dyn Adapter>>,
 }
 
 /// In-memory counters, for `status` and tests.
@@ -74,6 +80,8 @@ pub(crate) enum CoreMsg {
         bot: BotName,
         channels: BTreeSet<ChannelId>,
     },
+    /// A wake's adapter run ended.
+    WakeEnded { wake_id: Uuid, event: AdapterEvent },
     /// Reply once everything sent before has been applied (tests only).
     Flush(oneshot::Sender<()>),
     /// Reply with the counters (tests only).
@@ -148,13 +156,17 @@ pub fn spawn_core(deps: CoreDeps) -> CoreHandle {
     let ingest = Ingest::new(deps.ingest_store, deps.relays.clone(), deps.clock.clone());
     tokio::spawn(run_ingest(ingest, ingest_rx, core_tx.clone()));
     let core = apply::Core::new(
-        deps.store,
-        deps.roster,
-        deps.config,
-        deps.clock,
-        deps.relays,
-        deps.keys,
-        deps.memberships,
+        apply::CoreParts {
+            store: deps.store,
+            roster: deps.roster,
+            config: deps.config,
+            clock: deps.clock,
+            relays: deps.relays,
+            keys: deps.keys,
+            memberships: deps.memberships,
+            adapters: deps.adapters,
+        },
+        core_tx.clone(),
     );
     tokio::spawn(run_core(core, core_rx));
     CoreHandle { ingest_tx, core_tx }
@@ -192,12 +204,13 @@ async fn run_ingest(
 /// The core actor loop (design section 6.1).
 async fn run_core(mut core: apply::Core, mut rx: mpsc::UnboundedReceiver<CoreMsg>) {
     loop {
+        let wait = core.next_due_in(TICK);
         tokio::select! {
             message = rx.recv() => match message {
                 None | Some(CoreMsg::Shutdown) => break,
                 Some(message) => core.handle(message).await,
             },
-            () = tokio::time::sleep(TICK) => {}
+            () = tokio::time::sleep(wait) => core.schedule(),
         }
     }
 }

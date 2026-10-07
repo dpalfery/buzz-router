@@ -70,6 +70,9 @@ sha2 = { workspace = true }
 # Ingest and the core (tasks 2.6+): the clock and logging.
 chrono = { workspace = true }
 tracing = { workspace = true }
+# The wake queue and dispatch (task 3.3): adapter cancellation and wake tokens.
+tokio-util = { workspace = true }
+getrandom = { workspace = true }
 
 [dev-dependencies]
 sha2 = { workspace = true }
