@@ -1234,7 +1234,7 @@ All tasks here are **[Docker + local Buzz relay]**. They are acceptance verifica
   - [x] GREEN
   - [x] REFACTOR
 
-- [ ] **7.3 E2 and E3 [Docker + local Buzz relay]**
+- [x] **7.3 E2 and E3 [Docker + local Buzz relay]**
   - **Objective:** Automate acceptance scenarios E2 and E3.
   - **Files:** `crates/buzz-router/tests/{e2e_everyone.rs,e2e_stop.rs}`.
   - **Design:** §16.4.
@@ -1249,9 +1249,10 @@ All tasks here are **[Docker + local Buzz relay]**. They are acceptance verifica
       - **E3:** "stop" during E2 leaves no agent process within 5 s; 🛑 from each bot; nothing is published afterwards; the halt survives a router restart; "resume" brings ▶️ and normal routing.
     - *RED:* the scenario files don't exist yet.
     - *GREEN:* both pass.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** T7.3 commit. RED: the scenario files did not exist. `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 cargo test -p buzz-router --test e2e_everyone --test e2e_stop -- --test-threads=1`: both pass against the local Docker relay under the relay lock (E2 in 86 s, E3 in 52 s). No product defects found; no product fix needed.
 
 - [ ] **7.4 E5 and E6 [Docker + local Buzz relay]**
   - **Objective:** Automate acceptance scenarios E5 and E6.
