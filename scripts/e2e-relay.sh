@@ -147,6 +147,12 @@ cmd_up() {
 
   checkout_buzz "$([[ "$build" == "build" ]] && echo full || echo sparse)"
 
+  # MinIO is deliberately not started: its pinned image lives on quay.io, which
+  # refuses anonymous pulls (401), and nothing in tasks 2.9/7.x touches S3-backed
+  # features (media, git object storage). The relay's git object-store
+  # conformance probe is therefore disabled with its official kill-switch
+  # (BUZZ_GIT_CONFORMANCE_PROBE=false, the same flag Buzz's own
+  # boot_lifecycle tests use); everything else boots exactly as `just relay`.
   log "starting postgres and redis (project $PROJECT)"
   compose up -d --wait postgres redis
 
@@ -176,6 +182,7 @@ cmd_up() {
     --env-file "$BUZZ_DIR/.env.example" \
     -e DATABASE_URL="$database_url" \
     -e REDIS_URL=redis://redis:6379 \
+    -e BUZZ_GIT_CONFORMANCE_PROBE=false \
     -e RELAY_URL="$RELAY_URL" \
     -e BUZZ_BIND_ADDR=0.0.0.0:3000 \
     -e BUZZ_RELAY_PRIVATE_KEY \

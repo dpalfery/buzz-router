@@ -695,9 +695,9 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - A reply and a reaction are published and visible through a REST query. A typing indicator gets a relay OK.
     - *RED:* the e2e test file and harness don't exist yet, so the run fails to compile. Any product defect found later is its own RED.
     - *GREEN:* passes against the local relay.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 ## Milestone 3: wake engine plus stop (brief §17.3)
 
