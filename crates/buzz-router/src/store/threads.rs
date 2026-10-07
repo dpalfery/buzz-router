@@ -69,6 +69,19 @@ impl<'c> Threads<'c> {
         Ok(())
     }
 
+    /// Whether a thread row exists for `root_id`.
+    pub fn exists(&self, root_id: &EventId) -> Result<bool, StoreError> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT 1 FROM threads WHERE root_id = ?1",
+                [root_id.as_str()],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
+    }
+
     /// The thread rooted at `root_id`, with `turns_used` from its current round.
     pub fn load(&self, root_id: &EventId) -> Result<Option<ThreadState>, StoreError> {
         let raw = self

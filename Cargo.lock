@@ -488,6 +488,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "buzz-sdk",
+ "chrono",
  "clap",
  "directories",
  "hex",
@@ -503,6 +504,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tracing",
  "tracing-subscriber",
  "uuid",
 ]

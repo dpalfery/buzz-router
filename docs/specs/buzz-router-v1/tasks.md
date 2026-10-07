@@ -594,7 +594,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
   - [ ] GREEN
   - [ ] REFACTOR
 
-- [ ] **2.6 Ingest pipeline and shared test support**
+- [x] **2.6 Ingest pipeline and shared test support**
   - **Objective:** Implement ingest: signature check, kind and `h` filter, dedupe, thread, edit-target and parent resolution, and thread-rebuild requests. Create `tests/support/mod.rs`.
   - **Files:** `crates/buzz-router/src/ingest.rs`, `crates/buzz-router/tests/support/mod.rs`, `crates/buzz-router/tests/ingest.rs`.
   - **Design:** §6.3 (ingest), DD-13.
@@ -615,9 +615,9 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - The parent author comes from the store, else from `FakeRelay`.
     - *RED:* compile error, unresolved `buzz_router::ingest`.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 - [ ] **2.7 Publisher: replies, status notes, reactions, typing**
   - **Objective:** Build and publish every outbound event type, with the `posts` row written before sending, the REST fallback, and the halt refusal.
