@@ -7,11 +7,9 @@
 //!   where `BotName` is `router_core::ids::BotName`.
 //! - `KeySource::File(path)` reads, trims and parses the file with
 //!   `nostr::Keys::parse` (hex or nsec-bech32).
-//! - `KeySource::Keychain` returns `KeyError::Unsupported` (keychain loading
-//!   comes in task 6.1).
-//! - Expected `KeyError` shapes: `Io { .. }` (missing/unreadable file),
-//!   `Permissions { .. }` (Unix open permissions, Display names the path),
-//!   `Unsupported` (keychain, unit variant).
+//! - Expected `KeyError` shapes: `Io { .. }` (missing/unreadable file) and
+//!   `Permissions { .. }` (Unix open permissions, Display names the path).
+//!   `KeySource::Keychain` is covered by `keys_keychain.rs` (task 6.1).
 
 #![allow(
     clippy::unwrap_used,
@@ -115,14 +113,5 @@ fn missing_file_gives_io_error() {
     assert!(
         matches!(err, KeyError::Io { .. }),
         "expected KeyError::Io, got {err:?}"
-    );
-}
-
-#[test]
-fn keychain_source_is_unsupported() {
-    let err = load_key(&KeySource::Keychain, &bot_name()).unwrap_err();
-    assert!(
-        matches!(err, KeyError::Unsupported),
-        "expected KeyError::Unsupported, got {err:?}"
     );
 }

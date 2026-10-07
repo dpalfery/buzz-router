@@ -4,9 +4,10 @@
 //! handler returns `Result<(), CliError>`. On `Err`, `main` writes one JSON line to stderr, nothing
 //! to stdout, and exits with the code of the error's kind.
 //!
-//! Only `roster check`, `route --replay` and `service` are built so far. The other commands are in the tree,
+//! Only `roster check`, `route --replay`, `keys` and `service` are built so far. The other commands are in the tree,
 //! with their flags, and fail with `CliError::other("not implemented")` until their tasks.
 
+pub mod keys;
 mod replay;
 mod roster;
 mod service;
@@ -31,6 +32,8 @@ pub enum ErrorKind {
     Network,
     /// Authentication failed.
     Auth,
+    /// A bot's signing key could not be loaded, stored or verified.
+    Key,
     /// Anything else.
     Other,
 }
@@ -41,7 +44,7 @@ impl ErrorKind {
         match self {
             Self::BadInput => 1,
             Self::Network => 2,
-            Self::Auth => 3,
+            Self::Auth | Self::Key => 3,
             Self::Other => 4,
         }
     }
@@ -52,6 +55,7 @@ impl ErrorKind {
             Self::BadInput => "user_error",
             Self::Network => "network_error",
             Self::Auth => "auth_error",
+            Self::Key => "key_error",
             Self::Other => "error",
         }
     }
@@ -94,6 +98,11 @@ impl CliError {
     /// An [`ErrorKind::Auth`] error.
     pub fn auth(message: impl Into<String>) -> Self {
         Self::new(ErrorKind::Auth, message)
+    }
+
+    /// An [`ErrorKind::Key`] error.
+    pub fn key(message: impl Into<String>) -> Self {
+        Self::new(ErrorKind::Key, message)
     }
 
     /// An [`ErrorKind::Other`] error.
@@ -358,6 +367,12 @@ fn dispatch(command: Command, dirs: &Dirs) -> Result<(), CliError> {
             command: RosterCommand::Check,
         } => roster::check(dirs),
         Command::Route(args) => replay::run(dirs, &args.replay, args.roster.as_deref()),
+        Command::Keys {
+            command: KeysCommand::Set { bot },
+        } => keys::run_set(&bot),
+        Command::Keys {
+            command: KeysCommand::Check,
+        } => keys::run_check(dirs),
         Command::Service { command } => service::run(
             match command {
                 ServiceCommand::Install => service::Action::Install,
@@ -375,8 +390,7 @@ fn dispatch(command: Command, dirs: &Dirs) -> Result<(), CliError> {
         | Command::Pass
         | Command::Eta(_)
         | Command::Wakes(_)
-        | Command::Capture(_)
-        | Command::Keys { .. } => Err(not_implemented()),
+        | Command::Capture(_) => Err(not_implemented()),
     }
 }
 
@@ -390,6 +404,7 @@ mod tests {
     //! | `BadInput` | 1 | `user_error` | no |
     //! | `Network` | 2 | `network_error` | yes |
     //! | `Auth` | 3 | `auth_error` | no |
+    //! | `Key` | 3 | `key_error` | no |
     //! | `Other` | 4 | `error` | no |
     //!
     //! `CliError::json_line` is private and a child module can call it. It returns the stderr line
@@ -405,10 +420,11 @@ mod tests {
     use super::{CliError, ErrorKind};
 
     /// Each kind with its exit code, its category and whether it is retryable (decision D1).
-    const ROWS: [(ErrorKind, u8, &str, bool); 4] = [
+    const ROWS: [(ErrorKind, u8, &str, bool); 5] = [
         (ErrorKind::BadInput, 1, "user_error", false),
         (ErrorKind::Network, 2, "network_error", true),
         (ErrorKind::Auth, 3, "auth_error", false),
+        (ErrorKind::Key, 3, "key_error", false),
         (ErrorKind::Other, 4, "error", false),
     ];
 
@@ -497,6 +513,7 @@ mod tests {
             (CliError::bad_input("m"), ErrorKind::BadInput),
             (CliError::network("m"), ErrorKind::Network),
             (CliError::auth("m"), ErrorKind::Auth),
+            (CliError::key("m"), ErrorKind::Key),
             (CliError::other("m"), ErrorKind::Other),
         ];
 

@@ -1184,7 +1184,7 @@ Requirements: 20.4, 21.4, 51.2, 57.
 
 - **router-core:** `ConfigErrors(Vec<ConfigIssue{path, message}>)` and `ParseError`. `route` is infallible: malformed input yields an empty result plus a `Diagnostic`.
 - **buzz-router:** each module has its own `thiserror` enum: `StoreError`, `RelayError`, `AdapterError`, `ApiError` (implements `IntoResponse`), `KeyError` and `ServiceError`.
-  - `CliError { kind: ErrorKind, message }`, where `ErrorKind` is one of `BadInput→1`, `Network→2`, `Auth→3` and `Other→4`.
+  - `CliError { kind: ErrorKind, message }`, where `ErrorKind` is one of `BadInput→1`, `Network→2`, `Auth→3`, `Key→3` and `Other→4`. `Key` (category `key_error`) is for a signing key that cannot be loaded, stored or verified; `keys check` uses it (owner decision O7).
   - `main` prints `{"error": "<category>", "message": "...", "retryable": bool}` on stderr, the `buzz` CLI's format (`crates/buzz-cli/src/error.rs` `print_error`), and exits with the mapped code (R57). The categories are `user_error`, `network_error`, `auth_error`, `key_error` and `error`.
 - **Daemon failure policy:**
   - Relay errors retry forever (section 10.5).

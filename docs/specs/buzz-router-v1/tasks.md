@@ -1099,7 +1099,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
 
 ## Milestone 6: packaging, CI and release (brief §17.6)
 
-- [ ] **6.1 OS keychain keys and the `keys` commands**
+- [x] **6.1 OS keychain keys and the `keys` commands**
   - **Objective:** Implement `KeySource::Keychain`, `keys set` and `keys check`.
   - **Files:** `crates/buzz-router/src/keys.rs`, `crates/buzz-router/src/cli/keys.rs`, `crates/buzz-router/tests/{keys_keychain.rs,cli_keys.rs}`.
   - **Design:** §11, DD-20.
@@ -1119,9 +1119,9 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
     - *Behaviour (process):* `keys set --bot A` with an invalid nsec on stdin and an empty `--config-dir` exits 1 with a JSON error, without needing any configuration.
     - *RED:* `Keychain` returns `Unsupported`, and the commands are not implemented.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 - [x] **6.2 Service installation**
   - **Objective:** Render and install the per-OS service definitions through a `CommandRunner`.

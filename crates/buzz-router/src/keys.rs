@@ -4,12 +4,19 @@
 //! are read, trimmed and parsed with [`nostr::Keys::parse`], which accepts
 //! either bech32 (`nsec1…`) or hex. On Unix a key file whose permissions grant
 //! anything to group or others is refused (assumption A3, requirement R59.2).
-//! Keychain loading arrives in task 6.1; until then [`KeySource::Keychain`]
-//! returns [`KeyError::Unsupported`].
+//! Keychain keys are the entry with service [`KEYCHAIN_SERVICE`] and the bot
+//! name as account (DD-20, requirement R59.1).
+//!
+//! Entries are `keyring_core::Entry` values in the process's default store.
+//! Production code calls [`use_native_store`] once first; tests install
+//! `keyring_core::mock::Store` instead and never call it.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use router_core::ids::BotName;
+
+/// The keychain service name every bot entry uses.
+pub const KEYCHAIN_SERVICE: &str = "buzz-router";
 
 /// Where a bot's signing key comes from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,8 +25,18 @@ pub enum KeySource {
     /// permission check.
     File(PathBuf),
     /// The OS keychain (service `buzz-router`, account `<bot name>`).
-    /// Not implemented until task 6.1.
     Keychain,
+}
+
+impl KeySource {
+    /// The source a configured bot names. A relative file path is taken
+    /// relative to `config_dir`.
+    pub fn from_config(source: &router_core::config::KeySource, config_dir: &Path) -> Self {
+        match source {
+            router_core::config::KeySource::Keychain => Self::Keychain,
+            router_core::config::KeySource::File(path) => Self::File(config_dir.join(path)),
+        }
+    }
 }
 
 /// A failure to load a bot's signing key.
@@ -39,20 +56,63 @@ pub enum KeyError {
         /// The file that was refused.
         path: PathBuf,
     },
-    /// The keychain source, which arrives in task 6.1.
-    #[error("keychain key loading is not implemented yet")]
-    Unsupported,
+    /// The keychain entry could not be read or written.
+    #[error("keychain entry {KEYCHAIN_SERVICE}/{bot}: {message}")]
+    Keychain {
+        /// The bot whose entry it is.
+        bot: String,
+        /// What the keychain reported.
+        message: String,
+    },
     /// The file contents are not a valid secret.
     #[error("cannot parse the key: {0}")]
     Parse(String),
 }
 
+/// Installs the platform credential store as the process default. Call it
+/// once before the first keychain access; never in tests, where it would
+/// replace the mock store.
+pub fn use_native_store() -> Result<(), KeyError> {
+    keyring::Entry::store_status()
+        .as_ref()
+        .map_err(|error| KeyError::Keychain {
+            bot: String::from("*"),
+            message: format!("no usable OS keychain: {error}"),
+        })?;
+    Ok(())
+}
+
+/// The keychain entry for `bot`.
+fn keychain_entry(bot: &BotName) -> Result<keyring_core::Entry, KeyError> {
+    keyring_core::Entry::new(KEYCHAIN_SERVICE, bot.as_str())
+        .map_err(|error| keychain_error(bot, &error))
+}
+
+fn keychain_error(bot: &BotName, error: &keyring_core::Error) -> KeyError {
+    KeyError::Keychain {
+        bot: bot.to_string(),
+        message: error.to_string(),
+    }
+}
+
+/// Stores `secret` as the keychain entry for `bot`.
+pub fn store_keychain_secret(bot: &BotName, secret: &str) -> Result<(), KeyError> {
+    keychain_entry(bot)?
+        .set_password(secret)
+        .map_err(|error| keychain_error(bot, &error))
+}
+
 /// Loads the signing key for `bot` from `source`.
 ///
-/// File contents are trimmed before parsing, so a trailing newline is fine.
-pub fn load_key(source: &KeySource, _bot: &BotName) -> Result<nostr::Keys, KeyError> {
+/// The secret is trimmed before parsing, so a trailing newline is fine.
+pub fn load_key(source: &KeySource, bot: &BotName) -> Result<nostr::Keys, KeyError> {
     match source {
-        KeySource::Keychain => Err(KeyError::Unsupported),
+        KeySource::Keychain => {
+            let secret = keychain_entry(bot)?
+                .get_password()
+                .map_err(|error| keychain_error(bot, &error))?;
+            nostr::Keys::parse(secret.trim()).map_err(|error| KeyError::Parse(error.to_string()))
+        }
         KeySource::File(path) => {
             #[cfg(unix)]
             {

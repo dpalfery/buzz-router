@@ -407,6 +407,7 @@ dependencies = [
  "buzz-sdk",
  "clap",
  "directories",
+ "hex",
  "keyring",
  "keyring-core",
  "nostr",
