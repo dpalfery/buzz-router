@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "kyber-weave": {
+      "type": "local",
+      "command": ["kyber-weave-mcp", "--repo-root", "."],
+      "enabled": true,
+      "environment": {
+        "KYBER_WEAVE_REPO_ROOT": "."
+      }
+    }
+  }
+}

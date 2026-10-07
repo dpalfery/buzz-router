@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "kyber-weave": {
+      "command": "${userHome}/.local/bin/kyber-weave-mcp",
+      "args": [
+        "--repo-root",
+        "${workspaceFolder}"
+      ],
+      "env": {
+        "PATH": "${userHome}/.local/bin:${env:PATH}"
+      }
+    }
+  }
+}
