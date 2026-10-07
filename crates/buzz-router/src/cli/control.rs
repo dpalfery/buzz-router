@@ -100,7 +100,8 @@ fn names(bots: &BTreeSet<BotName>) -> Vec<&str> {
 }
 
 /// The CLI fallback for `stop` (design 6.7): halts first, then kills. Exits 0 once the halts
-/// are written; a tree that can't be killed is reported in the output.
+/// are written and every in-scope running wake is killed or reported; a running-wakes read
+/// that fails is an error, so a silent `killed: []` never hides live agents.
 fn fallback_stop(data_dir: &Path, roster: &Roster, scope: &Scope) -> Result<(), CliError> {
     let store_error =
         |error: StoreError| CliError::other(format!("cannot write the halt: {error}"));
@@ -126,7 +127,7 @@ fn fallback_stop(data_dir: &Path, roster: &Roster, scope: &Scope) -> Result<(), 
     let running = store
         .wakes()
         .with_state(WakeState::Running)
-        .unwrap_or_default();
+        .map_err(|error| CliError::other(format!("cannot list running wakes: {error}")))?;
     let mut killed = Vec::new();
     let mut failed = Vec::new();
     for wake in running.iter().filter(|wake| in_scope(scope, &wake.bot)) {

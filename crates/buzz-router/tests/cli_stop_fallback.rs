@@ -152,6 +152,39 @@ fn stop_without_a_daemon_writes_the_halt_and_kills_the_process_tree() {
 }
 
 #[test]
+fn stop_with_an_unreadable_running_wake_reports_the_error() {
+    // Finding #8: when the running wakes can't be read, `stop` must surface the error and
+    // exit non-zero instead of reporting nothing killed with exit 0.
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config");
+    let data = dir.path().join("data");
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::write(config.join("roster.toml"), roster_toml("")).unwrap();
+    std::fs::write(
+        config.join("router.toml"),
+        router_toml(1).replace("127.0.0.1:47821", &format!("127.0.0.1:{}", closed_port())),
+    )
+    .unwrap();
+    std::fs::create_dir_all(&data).unwrap();
+    let mut store = Store::open(&data.join("state.sqlite3")).unwrap();
+    // A `running` row whose id is not a UUID: `with_state(Running)` fails on it.
+    store
+        .connection_mut()
+        .execute(
+            "INSERT INTO wakes (id, bot, root_id, round_id, reason, priority, triggers, state, attempt, created_at, dispatch_after) VALUES ('not-a-uuid', 'A', 'ab', 'ab', 'mention', 'owner', '[]', 'running', 1, 1, 1)",
+            [],
+        )
+        .unwrap();
+    drop(store);
+
+    let output = run(dir.path(), &["stop"]);
+
+    assert_ne!(output.status.code(), Some(0), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("cannot list running wakes"), "{output:?}");
+}
+
+#[test]
 fn resume_without_a_daemon_is_a_network_error() {
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join("config");
