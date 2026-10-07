@@ -572,7 +572,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
   - [x] GREEN
   - [x] REFACTOR
 
-- [ ] **2.5 Discovery, subscription, backfill and cursors**
+- [x] **2.5 Discovery, subscription, backfill and cursors**
   - **Objective:** Discover channels, subscribe per channel, backfill from the cursor before flushing buffered live events, and handle first-run cursors.
   - **Files:** `crates/buzz-router/src/relay/{discovery.rs,backfill.rs}`, connection integration in `relay/conn.rs`, `crates/buzz-router/tests/relay_backfill.rs`.
   - **Design:** §10.2, §10.3, §10.4, §6.2 (first run).
@@ -590,9 +590,9 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - **Reconnect:** discovery, subscription and backfill from `cursor − 300` run again.
     - *RED:* compile errors for the missing discovery and backfill modules; the subscription assertions fail.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 - [x] **2.6 Ingest pipeline and shared test support**
   - **Objective:** Implement ingest: signature check, kind and `h` filter, dedupe, thread, edit-target and parent resolution, and thread-rebuild requests. Create `tests/support/mod.rs`.

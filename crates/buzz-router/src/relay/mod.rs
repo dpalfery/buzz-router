@@ -6,7 +6,9 @@
 //! the REST client in [`rest`] (NIP-98, retries, paging).
 
 pub mod auth;
+pub mod backfill;
 pub mod conn;
+pub mod discovery;
 pub mod rest;
 
 use std::future::Future;
