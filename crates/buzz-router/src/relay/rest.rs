@@ -22,7 +22,7 @@ use base64::Engine as _;
 use nostr::{EventBuilder, Kind, Tag};
 use sha2::{Digest, Sha256};
 
-use super::{RelayError, RelayPort};
+use super::{jittered, RelayError, RelayPort};
 
 /// Base retry delays for transient HTTP failures: 500 ms, 1 s, 2 s.
 /// Jitter (±20%) is applied at call time via [`jittered`].
@@ -51,20 +51,6 @@ pub fn relay_ws_to_http(relay_url: &str) -> String {
 /// Whether an HTTP status is transient and worth retrying.
 fn is_retriable_status(status: reqwest::StatusCode) -> bool {
     matches!(status.as_u16(), 429 | 502 | 503 | 504)
-}
-
-/// Applies ±20% jitter to a retry delay, exactly as `buzz-acp` does.
-///
-/// The factor is drawn from the current sub-second nanos over `u32::MAX`, so
-/// it lands in [0.8, 0.9) in practice: the delay never exceeds its base.
-fn jittered(base: Duration) -> Duration {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|elapsed| elapsed.subsec_nanos())
-        .unwrap_or_default();
-    // factor in [0.8, 1.2).
-    let factor = 0.8 + (f64::from(nanos) / f64::from(u32::MAX)) * 0.4;
-    base.mul_f64(factor)
 }
 
 /// The relay HTTP bridge client: NIP-98, `x-auth-tag`, retries and paging.

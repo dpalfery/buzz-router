@@ -146,9 +146,10 @@ fn relay_error(error: RelayError) -> CliError {
     match error {
         RelayError::Status(401 | 403) => CliError::auth(error.to_string()),
         RelayError::Transport(_) => CliError::network(error.to_string()),
-        RelayError::Status(_) | RelayError::Decode(_) | RelayError::Auth(_) => {
-            CliError::other(error.to_string())
-        }
+        RelayError::Status(_)
+        | RelayError::Decode(_)
+        | RelayError::Auth(_)
+        | RelayError::Rejected(_) => CliError::other(error.to_string()),
     }
 }
 

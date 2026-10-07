@@ -568,9 +568,9 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - A Ping gets a Pong.
     - *RED:* compile error, unresolved `buzz_router::relay::conn::spawn_connection`.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 - [ ] **2.5 Discovery, subscription, backfill and cursors**
   - **Objective:** Discover channels, subscribe per channel, backfill from the cursor before flushing buffered live events, and handle first-run cursors.

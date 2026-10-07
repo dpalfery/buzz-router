@@ -5,10 +5,13 @@
 //! to publish and query (tests substitute a fake), the [`RelayError`], and
 //! the REST client in [`rest`] (NIP-98, retries, paging).
 
+pub mod auth;
+pub mod conn;
 pub mod rest;
 
 use std::future::Future;
 use std::pin::Pin;
+use std::time::Duration;
 
 /// A failure to talk to the relay, over WebSocket or REST.
 #[derive(Debug, thiserror::Error)]
@@ -22,6 +25,9 @@ pub enum RelayError {
     /// The relay's response could not be understood.
     #[error("relay response was not valid: {0}")]
     Decode(String),
+    /// The relay answered `false` to a publish, with its reason.
+    #[error("the relay rejected the event: {0}")]
+    Rejected(String),
     /// The request could not be authenticated (NIP-98 signing failed).
     #[error("cannot build relay auth: {0}")]
     Auth(String),
@@ -44,4 +50,18 @@ pub trait RelayPort: Send + Sync {
         &self,
         filters: Vec<nostr::Filter>,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<nostr::Event>, RelayError>> + Send + '_>>;
+}
+
+/// Applies ±20% jitter to a retry or reconnect delay, exactly as `buzz-acp`
+/// does: the factor is drawn from the current sub-second nanos over
+/// `u32::MAX`, so it lands in [0.8, 0.9) in practice and never exceeds the
+/// base.
+pub(crate) fn jittered(base: Duration) -> Duration {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.subsec_nanos())
+        .unwrap_or_default();
+    // factor in [0.8, 1.2).
+    let factor = 0.8 + (f64::from(nanos) / f64::from(u32::MAX)) * 0.4;
+    base.mul_f64(factor)
 }
