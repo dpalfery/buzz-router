@@ -42,3 +42,8 @@ Later waves are assigned by Claude. Check `git log feat/buzz-router-v1` to see w
 ## CLARIFICATION on "AMEND"
 AMEND is NOT progress-doc updates. It is the owner-decision change set O2-O8 above: code changes (O2 config rejections, O4 foreign-bot p-tag Suppress + fixture, O7 ErrorKind::Key) and spec text edits (O3, O5, O6 design §11, O7 design §14, O8 task 3.5). Own commit `AMEND: owner decisions O2-O8`.
 Everything you need is inside your worktree under .squad/ (you cannot read outside it).
+
+## LANE UPDATE 2
+- T2.3 landed. cursor now owns: 2.6 -> 2.8 -> 3.2 -> 3.3 (then 3.4 once T2.7 lands). 2.8 is REMOVED from pi's list (pi: 2.4 -> 2.7 only).
+- opencode: AMEND only, then stop.
+- Always check `git log feat/buzz-router-v1` and tasks.md checkboxes before starting a task; skip any already landed.
