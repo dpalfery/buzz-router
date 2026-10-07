@@ -26,7 +26,7 @@ last-reviewed: 2026-10-07
 | Pull request | [#1 (draft)](https://github.com/dpalfery/buzz-router/pull/1) |
 | Last task commit | `2e7607d` (FIX cycle2 G; 8.2 closeout recorded, still open) |
 | Tests | 670 passed, 0 failed, 15 ignored (`cargo test --workspace --locked`, macOS arm64). `clippy -D warnings` and `fmt --check` are clean. `router-core` is tokio-free. 69 conformance fixtures (70 conformance tests including registration). The 15 ignored tests are the e2e suite, which is `#[ignore]`d and runs with `BUZZ_E2E=1 ... -- --ignored` against the local relay via `scripts/e2e-relay.sh` (failing without `BUZZ_E2E=1` rather than passing silently). |
-| CI | `ci.yml` (fmt lint + 3-OS clippy/test/release-build + ubuntu tokio-free/openssl/bundled checks + 3-OS e2e with ubuntu required + MSRV 1.88) plus Docs Gate and `release.yml` (tag builds + publish). |
+| CI | `ci.yml` (fmt lint + 3-OS clippy/test/release-build + ubuntu tokio-free/openssl/bundled checks + ubuntu e2e + MSRV 1.88) plus Docs Gate and `release.yml` (tag builds + publish). |
 | Reviews | Two independent council reviews done (`.squad/REVIEW.md`, `.squad/REVIEW2.md`); all findings fixed except deliberately deferred/dropped ones. |
 | Not yet verified | 3-OS GitHub CI results (CI has not run on a pushed branch yet); a real tag/`workflow_dispatch` release dry run; real Windows Task Scheduler crash-restart behaviour (manual runbook check). |
 | Open item | Finding E: a channel whose backfill fails permanently makes a bot redial forever — awaits an owner decision. |

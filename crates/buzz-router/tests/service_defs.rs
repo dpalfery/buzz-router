@@ -75,10 +75,8 @@ fn text(path: &Path) -> String {
 fn utf16_text(path: &Path) -> String {
     let bytes = std::fs::read(path).unwrap();
     assert_eq!(&bytes[..2], &[0xFF, 0xFE], "a UTF-16 LE byte-order mark");
-    let units: Vec<u16> = bytes[2..]
-        .chunks_exact(2)
-        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-        .collect();
+    let (pairs, _) = bytes[2..].as_chunks::<2>();
+    let units: Vec<u16> = pairs.iter().map(|pair| u16::from_le_bytes(*pair)).collect();
     String::from_utf16(&units).unwrap()
 }
 
