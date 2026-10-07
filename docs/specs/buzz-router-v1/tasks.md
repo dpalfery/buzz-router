@@ -1195,7 +1195,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
 
 All tasks here are **[Docker + local Buzz relay]**. They are acceptance verification of behaviour already delivered. RED is the scenario test not yet existing or failing. A product defect found here is fixed under its own RED → GREEN, with the failing scenario as the RED evidence.
 
-- [ ] **7.1 E2E harness [Docker + local Buzz relay]**
+- [x] **7.1 E2E harness [Docker + local Buzz relay]**
   - **Objective:** Extend `tests/e2e_support/mod.rs` into the full §16.4 harness.
     - Per-run throwaway identities O, A, B and C. Channel provisioning.
     - `roster.toml` and `router.toml` written to temporary dirs, with `file:` keys at mode 0600 and command adapters running `buzz-router-test-agent echo --delay N`.
@@ -1211,9 +1211,9 @@ All tasks here are **[Docker + local Buzz relay]**. They are acceptance verifica
     - *Behaviour:* the router starts; `status` shows all three bots connected; O posting "@A ping" gets 👀 and a reply from A.
     - *RED:* the harness module doesn't exist yet.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 - [ ] **7.2 E1 and E4 [Docker + local Buzz relay]**
   - **Objective:** Automate acceptance scenarios E1 and E4.
