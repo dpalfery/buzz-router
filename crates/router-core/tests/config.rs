@@ -843,6 +843,34 @@ fn rejects_a_roster_that_is_not_valid_toml_with_one_issue_at_the_empty_path() {
 }
 
 #[test]
+fn rejects_duplicate_channel_ids() {
+    let source = edit(
+        &base_roster(),
+        &fixture_uuid("channel-2"),
+        &fixture_uuid("channel-1"),
+    );
+
+    assert_eq!(roster_error_paths(&source), ["channels[1].id"]);
+}
+
+#[test]
+fn rejects_a_bot_named_all() {
+    for bad in ["all", "All", "ALL"] {
+        let source = edit(
+            &base_roster(),
+            "name = \"beta-bot\"",
+            &format!("name = \"{bad}\""),
+        );
+
+        assert_eq!(
+            roster_error_paths(&source),
+            ["bots[1].name"],
+            "bot name {bad:?} should be rejected: it collides with the 'all' halt scope"
+        );
+    }
+}
+
+#[test]
 fn a_roster_with_several_defects_reports_every_one_sorted_by_path() {
     let source = edit(&base_roster(), "version = 1", "version = 2");
     let source = edit(&source, "America/Chicago", "Mars/Olympus");
@@ -1402,6 +1430,24 @@ fn router_rejects_a_missing_key() {
     let source = edit(&base_router(), "key = \"keychain\"\n", "");
 
     assert_eq!(router_error_paths(&source), ["bots[0].key"]);
+}
+
+#[test]
+fn router_rejects_a_max_concurrent_of_zero() {
+    let source = edit(&base_router(), "max_concurrent = 1", "max_concurrent = 0");
+
+    assert_eq!(router_error_paths(&source), ["bots[0].max_concurrent"]);
+}
+
+#[test]
+fn router_rejects_an_empty_command() {
+    let source = edit(
+        &base_router(),
+        "command = [\"agent\", \"--text\"]",
+        "command = []",
+    );
+
+    assert_eq!(router_error_paths(&source), ["bots[0].adapter.command"]);
 }
 
 #[test]

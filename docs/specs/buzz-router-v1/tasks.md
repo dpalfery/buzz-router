@@ -806,7 +806,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
 - [ ] **3.5 Command adapter and test agent**
   - **Objective:** Implement `CommandAdapter` (process group, environment, prompt modes, capped stdout, stderr logging, scratch files, pid file) and the `buzz-router-test-agent` modes.
   - **Files:** `crates/buzz-router/src/adapter/command.rs`, `crates/test-agent/src/main.rs`, `crates/buzz-router/tests/adapter_command.rs`.
-  - **Design:** §7.1, DD-20, DD-21, §16.3.
+  - **Design:** §7.1, DD-19, DD-20, DD-21, §16.3.
   - **Requirements:** R36.5, R37 (all), R40.8, R59.4.
   - **Depends on:** 3.4.
   - **Agents:** `test-dev` (RED, test-agent modes); `tauri-dev` (GREEN, REFACTOR).
@@ -815,6 +815,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
     2. `env_remove("BUZZ_PRIVATE_KEY")` is applied last.
     3. Stdout is drained past 64 KiB.
     4. `wakes/<id>/{payload.json,prompt.txt,pid}` are mode 0600 on Unix and deleted when the wake ends.
+    5. A leading `~` in the adapter `cwd` is expanded to the operator's home directory (DD-19, owner decision O8).
   - **Test contract:**
     - *Run:* `cargo test -p buzz-router --test adapter_command`
     - *Behaviour:*
@@ -824,6 +825,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - **Outcomes:** `[no-reply]` and empty output give `passed`. Exit 3 with stdout gives `failed`, and nothing is posted. API mode with exit 0 and no post gives `passed`.
       - **Logging:** stderr lines appear in the captured `tracing` output.
       - **Files:** the payload file is 0600 on Unix and gone after the wake.
+      - **Home expansion:** with `cwd` set to a `~`-prefixed directory, the command runs with the expanded directory as its working directory.
       - **Pass then linger:** `api-pass-then-sleep` is killed within 5 s of the pass.
     - *RED:* compile error, unresolved `buzz_router::adapter::command::CommandAdapter`.
     - *GREEN:* passes on all three OSes.

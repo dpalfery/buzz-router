@@ -123,7 +123,16 @@ fn validate_bots(
     for (index, file) in files.iter().enumerate() {
         let path = index_path("bots", index);
         if let Some(name) = &file.name {
-            claim_name(&mut claimed_names, name, key_path(&path, "name"), issues);
+            let name_path = key_path(&path, "name");
+            claim_name(&mut claimed_names, name, name_path.clone(), issues);
+            // Owner decision O2: `all` is the halt scope that covers every bot (design 6.7),
+            // stored as one `halts` row, so no bot may be named `all`, in any case.
+            if name.as_str().eq_ignore_ascii_case("all") {
+                issues.add(
+                    name_path,
+                    "\"all\" is reserved for the halt scope covering every bot",
+                );
+            }
         }
         let aliases_path = key_path(&path, "aliases");
         for (alias_index, alias) in &file.aliases {
@@ -226,9 +235,16 @@ fn validate_channels(
         .filter_map(|bot| bot.name.as_ref())
         .map(|name| (name.as_str(), name))
         .collect();
+    // Owner decision O2: channel ids identify threads and cursors, so each one may appear once.
+    let mut seen_ids = BTreeSet::new();
     let mut channels = Vec::new();
     for (index, file) in files.iter().enumerate() {
         let path = index_path("channels", index);
+        if let Some(id) = file.id {
+            if !seen_ids.insert(id) {
+                issues.add(key_path(&path, "id"), "this channel id is already used");
+            }
+        }
         let default_bot = if file.default_bot.is_empty() {
             Some(None)
         } else if let Some(name) = bot_names.get(file.default_bot.as_str()) {
@@ -376,7 +392,16 @@ fn validate_router_bots(
         });
         let auth_tag =
             parse_optional_auth_tag(&file.auth_tag, &key_path(&path, "auth_tag"), issues);
-        let adapter = file.adapter.as_ref().and_then(resolve_adapter);
+        // Owner decision O2: zero concurrency would wedge the bot's queue behind a wake that can
+        // never dispatch.
+        if file.max_concurrent == Some(0) {
+            issues.add(key_path(&path, "max_concurrent"), "must be at least 1");
+        }
+        let adapter_path = key_path(&path, "adapter");
+        let adapter = file
+            .adapter
+            .as_ref()
+            .and_then(|file| resolve_adapter(file, &adapter_path, issues));
         if let (Some(name), Some(key), Some(auth_tag), Some(adapter)) =
             (name, key, auth_tag, adapter)
         {
@@ -435,7 +460,8 @@ fn parse_optional_auth_tag(
 }
 
 /// Turns a whole adapter table into its resolved form. An empty optional string is `None`.
-fn resolve_adapter(file: &AdapterFile) -> Option<AdapterConfig> {
+/// An empty command is rejected (owner decision O2): there would be no program to run.
+fn resolve_adapter(file: &AdapterFile, path: &str, issues: &mut Issues) -> Option<AdapterConfig> {
     match file {
         AdapterFile::Command {
             command,
@@ -444,14 +470,21 @@ fn resolve_adapter(file: &AdapterFile) -> Option<AdapterConfig> {
             prompt_mode,
             reply_mode,
             prompt_template,
-        } => Some(AdapterConfig::Command {
-            command: command.clone()?,
-            cwd: cwd.clone()?,
-            env: env.clone(),
-            prompt_mode: (*prompt_mode)?,
-            reply_mode: (*reply_mode)?,
-            prompt_template: non_empty(prompt_template).map(PathBuf::from),
-        }),
+        } => {
+            let command = command.clone()?;
+            if command.is_empty() {
+                issues.add(key_path(path, "command"), "must name a program to run");
+                return None;
+            }
+            Some(AdapterConfig::Command {
+                command,
+                cwd: cwd.clone()?,
+                env: env.clone(),
+                prompt_mode: (*prompt_mode)?,
+                reply_mode: (*reply_mode)?,
+                prompt_template: non_empty(prompt_template).map(PathBuf::from),
+            })
+        }
         AdapterFile::Webhook {
             url,
             secret_env,

@@ -12,7 +12,9 @@
 //!   order, and a pass is a `Human` wake that does not wait out the debounce (requirement 14).
 //! - A foreign bot never wakes anyone: every target gets `Suppress(RespondTo)` (requirement 15).
 //!   When its `auth` tag names one of the owner's keys, the result also carries a roster-drift
-//!   diagnostic (requirement 4.4).
+//!   diagnostic (requirement 4.4). A foreign bot's `p` tags count as mentions of local bots even
+//!   though requirement 17.4 counts `p` tags only for owner and human authors: owner decision O4
+//!   (Reading 1) is that requirement 15.2 wins over 17.4 for foreign bots.
 
 use std::collections::BTreeSet;
 
@@ -24,7 +26,7 @@ use super::{
 use crate::classify::AuthorClass;
 use crate::config::RespondTo;
 use crate::ids::BotName;
-use crate::parse::mentioned_bots;
+use crate::parse::{mentioned_bots, p_tag_bots};
 use crate::thread::thread_position;
 
 /// The gates a human-caused target passes, in the order they are checked (requirement 14.3).
@@ -46,7 +48,7 @@ struct Targets {
 
 /// Routes the kind-9 message of a human (design 5.5, `human_message`).
 pub(super) fn human_message(ev: &InEvent, snap: &Snapshot<'_>) -> RouteResult {
-    let Targets { bots, reason } = targets(ev, snap);
+    let Targets { bots, reason } = targets(ev, snap, &AuthorClass::Human);
     let decisions = bots
         .into_iter()
         .filter(|bot| consider(bot, ev.channel, snap))
@@ -76,7 +78,8 @@ pub(super) fn foreign_message(
     snap: &Snapshot<'_>,
     owner_is_ours: bool,
 ) -> RouteResult {
-    let Targets { bots, .. } = targets(ev, snap);
+    let class = AuthorClass::ForeignBot { owner_is_ours };
+    let Targets { bots, .. } = targets(ev, snap, &class);
     let decisions = bots
         .into_iter()
         .filter(|bot| consider(bot, ev.channel, snap))
@@ -103,10 +106,15 @@ pub(super) fn foreign_message(
 /// replies to. `@everyone` names nobody here, and a reply to the thread root is not a reply to a
 /// bot (requirement 14.1).
 ///
-/// A foreign bot's message is read as a human's, so its `p` tags count too (design 5.5: the same
-/// target selection as a human; requirement 15.2: "in any form").
-fn targets(ev: &InEvent, snap: &Snapshot<'_>) -> Targets {
-    let mentioned = mentioned_bots(ev, &AuthorClass::Human, snap.roster, None);
+/// A foreign bot's message is read with its own class, so [`mentioned_bots`] ignores its `p` tags
+/// (requirement 17.4, as for bot authors). Its `p` tags are then counted explicitly: requirement
+/// 15.2 names a local bot "in any form", and owner decision O4 (Reading 1) is that 15.2 wins over
+/// 17.4 for foreign bots.
+fn targets(ev: &InEvent, snap: &Snapshot<'_>, class: &AuthorClass) -> Targets {
+    let mut mentioned = mentioned_bots(ev, class, snap.roster, None);
+    if matches!(class, AuthorClass::ForeignBot { .. }) {
+        mentioned.extend(p_tag_bots(ev, snap.roster));
+    }
     if !mentioned.is_empty() {
         return Targets {
             bots: mentioned,

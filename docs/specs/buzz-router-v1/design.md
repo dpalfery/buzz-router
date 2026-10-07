@@ -120,7 +120,8 @@ Unless noted, versions are those Buzz's workspace pins at the reference commit (
 | `rustls` | `0.23`, `default-features = false`: `ring`, `std` | binary | install the ring provider at startup, as `buzz-acp` does (`crates/buzz-acp/src/lib.rs` `tokio_main`) |
 | `axum` | `0.8` (default features) | binary | HTTP API |
 | `rusqlite` | `0.40` (verified 0.40.2): `bundled` | binary | no system SQLite (R58.2) |
-| `keyring` | current major: macOS native, Windows native and Linux Secret Service backends | binary | **Version not verified.** The crates.io lookup was blocked in this session. Task 1 pins the latest major and confirms its backend feature names. |
+| `keyring` | `4.2.0`, `default-features = false`, features `["v1"]` | binary | macOS Keychain (`apple-native-keyring-store`), Windows Credential Manager (`windows-native-keyring-store`) and Linux Secret Service over D-Bus (`zbus-secret-service-keyring-store`, pure Rust, synchronous). Owner decision O6. |
+| `keyring-core` | `1` (locked `1.0.0`) | binary | Provides `Entry` and the mock store. Production installs the native store once with `keyring::Entry::store_status()`, then creates every entry as a `keyring_core::Entry`; tests install `keyring_core::mock::Store` instead. Owner decision O6. |
 | `command-group` | `5.0.1` (verified): `with-tokio` | binary | process group (Unix) and Job Object (Windows) |
 | `nix` | `0.31`: `signal`, `process` (Unix only, `cfg(unix)`) | binary | `killpg` for the CLI stop fallback (section 6.7) |
 | `chrono` | `0.4`: `serde` | core, binary | `DateTime<Utc>` |
@@ -260,9 +261,12 @@ The resolved types are `Roster` and `RouterConfig`:
 - `version == 1`, and `owner.timezone` parses as a `chrono_tz::Tz` (R2.3).
 - `quiet_hours` is `""` or matches `^\d{2}:\d{2}-\d{2}:\d{2}$` with valid times (R22.3).
 - Every `router.toml` bot name exists in the roster (R1.7). `key` is `keychain` or `file:<path>` (R1.8).
+- `max_concurrent` is at least 1, and a command adapter's `command` is non-empty (owner decision O2).
 
 **Rules from A3:**
 - Names and aliases are unique, case-insensitively, across the roster. Pubkeys are unique.
+- No bot is named `all`, in any ASCII case: `all` is the halt scope covering every bot (owner decision O2).
+- No two channels share an id (owner decision O2).
 - No pubkey is both an owner key and a bot key.
 - A `default_bot` that is set names a roster bot.
 - An async webhook bot requires non-empty `public_url` and `tailnet_bind`.
@@ -461,7 +465,7 @@ route(ev, snap, now):
    - else `gate([Halted, Quiet, Cap, Budget])`, and on a pass `Wake{Human, debounce:false}`.
 3. No thread update.
 
-**foreign_message** (R15): same target selection as human. Every considered target gets `Suppress(RespondTo)`.
+**foreign_message** (R15): same target selection as human, except that a foreign bot's `p` tags count as mentions of local bots (owner decision O4, Reading 1: R15.2 wins over R17.4 for foreign bots). Every considered target gets `Suppress(RespondTo)`.
 
 **owner_edit** (R16, A11):
 
@@ -523,6 +527,8 @@ Requirements: 55.2–55.4; assumption A17.
 2. Build a `Snapshot` from the simulator's own state: the thread map, an index of event id to author and root (for parent authors and edit targets), halts, and the wake counts and quiet set for that `now`.
 3. Call `route`.
 4. Apply the thread update and controls, and count every `Wake` as dispatched immediately, so Cap and Budget progress realistically.
+
+The simulator never invents thread state for a root it never saw (owner decision O5): a reply under an unseen root is routed with no thread (`thread: None`), and a thread update for a thread that never started is dropped.
 
 The simulator performs no I/O.
 
@@ -811,7 +817,7 @@ All events are signed with the bot's `nostr::Keys` (R59.3). Publishing goes over
 
 **Reply** (R44):
 
-1. Compute mention pubkeys with `mentions_for_reply(text, roster)`. This is the same extractor, with `names` = bot names, aliases and `owner.name`. A bot name maps to its pubkey. The owner name maps to **every** owner pubkey (DD-18).
+1. Compute mention pubkeys with `mentions_for_reply(text, roster)`. This is the same extractor, with `names` = bot names, aliases and `owner.name`. A bot name maps to its pubkey. The owner name maps to **every** owner pubkey (DD-18). A bare whole-word occurrence of the owner name (no `@`, any ASCII case) maps to every owner pubkey too (owner decision O3: the T1.4 interim reading, recorded as the spec).
 2. `ThreadRef{root_event_id: root, parent_event_id: reaction target}`. `build_message`'s `thread_tags` emits the direct-reply or nested tag shape itself (`crates/buzz-sdk/src/builders.rs:178`).
 3. `buzz_sdk::builders::build_message(channel, text, Some(&thread_ref), &mentions, false, &[], &[])`, then `.tag(auth_tag)` if set, then `.tag(["buzz-router", VERSION, "reply"])`, then `.sign_with_keys(&keys)`.
 4. **Insert the `posts` row (`event_id`, bot, `wake_id`, `created_at`) before sending**, so the relay echo is never counted as unmanaged (R44.7, DD-6). Increment `RunningWake.posts`.
@@ -1086,6 +1092,8 @@ A RelayConn failure affects only its own bot. While the socket is down, publishe
 ## 11. Keys (`keys.rs`)
 
 Requirements: 54, 59; assumptions A3, A16.
+
+Pinned versions (owner decision O6): `keyring` 4.2.0 (feature `v1`) with `keyring-core` 1.0.0; see §3.2.
 
 - `KeySource::Keychain` uses `keyring::Entry::new("buzz-router", <bot name>)`, so the service is `buzz-router` and the account is the bot name (DD-20). `get_password()` returns the nsec, and `nostr::Keys::parse` loads it (R59.1).
 - `KeySource::File(path)`:

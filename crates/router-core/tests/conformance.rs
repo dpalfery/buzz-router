@@ -835,6 +835,7 @@ conformance_case! {
     case_119 => "119-daily-budget-bot-caused.json",
     case_120 => "120-daily-budget-owner-not-blocked.json",
     case_121 => "121-bot-stop-not-control.json",
+    case_122 => "122-foreign-bot-p-tag.json",
 }
 
 #[test]
