@@ -701,7 +701,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
 
 ## Milestone 3: wake engine plus stop (brief §17.3)
 
-- [ ] **3.1 Prompt rendering and payload model**
+- [x] **3.1 Prompt rendering and payload model**
   - **Objective:** Implement the built-in template, `render`, `reason_text`, `render_context` and `WakePayload` serialisation.
   - **Files:** `crates/router-core/src/{prompt.rs,payload.rs}`, `crates/router-core/tests/{prompt.rs,payload.rs}`.
   - **Design:** §5.7, DD-17.
@@ -719,9 +719,9 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - The payload JSON has the brief §9.3 keys. `reason` is `"reply_target"`, `round_mode` is `"discussion"`, `deadline` looks like `2026-10-05T03:20:00Z`, `turns_left_after_this` is `limit − used_after`, and `api` holds the paths.
     - *RED:* compile error, unresolved `router_core::prompt` and `router_core::payload`.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 - [ ] **3.2 Core actor, clock, snapshot building, applying results, thread rebuild**
   - **Objective:** Implement the core actor loop, `Clock`, building the snapshot, the transactional apply of `RouteResult`, the ⏸️-once rule, budget counters, cursor advance and `RebuildThread`.
