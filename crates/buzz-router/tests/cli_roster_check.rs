@@ -297,6 +297,7 @@ fn the_config_dir_flag_is_global_and_names_the_directory_that_is_read() {
 
     let after_the_subcommand = sandbox
         .command()
+        .env("BUZZ_ROUTER_DATA_DIR", sandbox.data())
         .args(["roster", "check", "--config-dir"])
         .arg(sandbox.config())
         .output()
@@ -313,6 +314,7 @@ fn the_config_dir_variable_names_the_directory_that_is_read() {
     let output = sandbox
         .command()
         .env("BUZZ_ROUTER_CONFIG_DIR", sandbox.config())
+        .env("BUZZ_ROUTER_DATA_DIR", sandbox.data())
         .args(["roster", "check"])
         .output()
         .expect("the binary starts");
