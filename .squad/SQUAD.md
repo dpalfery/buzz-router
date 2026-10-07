@@ -68,3 +68,8 @@ All tasks are landed; this is the fix pass. Use the bug-crusher workflow per fin
 - Lane B (pi): #2, #3, #8, #9, #10, #16 — core/dispatch.rs, core/apply.rs, cli/control.rs, logging.rs.
 - Lane C (opencode): #12 (release.yml), #13, #14 (e2e tests), #15 (conformance fixtures, one per listed rule; if a fixture exposes a routing bug, fix it in router-core), #17, #18 and the unticked-header reconciliation (tick the 9 task headers listed in the review; leave the 3 CI-pending sub-boxes).
 - HELD for owner (do NOT do): #7 shutdown behaviour, #19 (.squad removal is done last by Claude), #20 Windows restart, #21 runbook rollback section.
+
+## LANE UPDATE 7 (owner decisions on held findings)
+- #7 APPROVED: on SIGTERM/service stop, cancel each running wake and wait a short bounded time, kill if they don't stop; add kill_on_drop to command spawns. Update design text. (follow-up, assigned after Lane A)
+- #20 APPROVED: add a 1-minute repeating trigger (indefinite) with MultipleInstancesPolicy IgnoreNew to the Windows task XML in service/windows.rs, keep the logon trigger and RestartOnFailure; update design section 13 and add a manual "kill the process, confirm it returns within ~1 min" check to the runbook (docs/runbooks/buzz-router-cutover.md). (follow-up, assigned after Lane B)
+- #21 DROPPED: no rollback section needed.
