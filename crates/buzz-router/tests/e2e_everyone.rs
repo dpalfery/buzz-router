@@ -54,15 +54,21 @@ fn backlog(status: &serde_json::Value) -> bool {
         })
 }
 
-/// How many wake rows bot `name` has in SQLite.
-async fn wake_rows(e2e: &E2e, name: &str) -> usize {
+/// The wake reasons bot `name` has in SQLite, oldest first.
+async fn wake_reasons(e2e: &E2e, name: &str) -> Vec<String> {
     let output = e2e.cli(&["wakes", "--bot", name]).await;
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     String::from_utf8(output.stdout)
         .expect("wakes prints UTF-8")
         .lines()
         .filter(|line| !line.is_empty())
-        .count()
+        .map(|line| {
+            serde_json::from_str::<serde_json::Value>(line).expect("a wake line is JSON")["reason"]
+                .as_str()
+                .expect("a wake line has a reason")
+                .to_owned()
+        })
+        .collect()
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -109,14 +115,20 @@ async fn everyone_wakes_every_bot_and_the_thread_goes_quiet() {
         );
     }
 
-    // No bot was woken more than 4 times.
+    // The discussion ran: every bot was woken for the `@everyone` mention
+    // and again by another bot's post, and discussion wakes exist. (One row
+    // per bot would pass even if discussion wakes were completely broken.)
+    let mut saw_discussion = false;
     for name in BOTS {
-        let rows = wake_rows(&e2e, name).await;
+        let reasons = wake_reasons(&e2e, name).await;
         assert!(
-            (1..=4).contains(&rows),
-            "{name} has {rows} wake rows, expected 1-4"
+            (2..=4).contains(&reasons.len()),
+            "{name} has {} wake rows, expected 2-4: {reasons:?}",
+            reasons.len()
         );
+        saw_discussion |= reasons.iter().any(|reason| reason == "discussion");
     }
+    assert!(saw_discussion, "at least one wake has reason discussion");
 
     e2e.stop().await;
 }
