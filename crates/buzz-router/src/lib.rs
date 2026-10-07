@@ -6,3 +6,4 @@
 pub mod cli;
 mod logging;
 pub mod paths;
+pub mod service;

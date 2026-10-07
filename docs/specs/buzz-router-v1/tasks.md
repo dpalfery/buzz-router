@@ -1123,7 +1123,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
   - [ ] GREEN
   - [ ] REFACTOR
 
-- [ ] **6.2 Service installation**
+- [x] **6.2 Service installation**
   - **Objective:** Render and install the per-OS service definitions through a `CommandRunner`.
   - **Files:** `crates/buzz-router/src/service/{mod.rs,macos.rs,linux.rs,windows.rs}`, `crates/buzz-router/src/cli/service.rs`, `crates/buzz-router/tests/service_defs.rs`.
   - **Design:** §13, DD-8.
@@ -1145,9 +1145,9 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - `status` runs the §13 query command.
     - *RED:* compile error, unresolved `buzz_router::service`.
     - *GREEN:* passes on all three OSes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 - [ ] **6.3 CI: full matrix and build checks** *(no-test task)*
   - **Objective:** Extend `ci.yml` to the full matrix and add the build-property checks.

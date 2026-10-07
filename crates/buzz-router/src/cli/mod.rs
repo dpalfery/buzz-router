@@ -4,11 +4,12 @@
 //! handler returns `Result<(), CliError>`. On `Err`, `main` writes one JSON line to stderr, nothing
 //! to stdout, and exits with the code of the error's kind.
 //!
-//! Only `roster check` and `route --replay` are built so far. The other commands are in the tree,
+//! Only `roster check`, `route --replay` and `service` are built so far. The other commands are in the tree,
 //! with their flags, and fail with `CliError::other("not implemented")` until their tasks.
 
 mod replay;
 mod roster;
+mod service;
 
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -357,6 +358,14 @@ fn dispatch(command: Command, dirs: &Dirs) -> Result<(), CliError> {
             command: RosterCommand::Check,
         } => roster::check(dirs),
         Command::Route(args) => replay::run(dirs, &args.replay, args.roster.as_deref()),
+        Command::Service { command } => service::run(
+            match command {
+                ServiceCommand::Install => service::Action::Install,
+                ServiceCommand::Uninstall => service::Action::Uninstall,
+                ServiceCommand::Status => service::Action::Status,
+            },
+            dirs,
+        ),
         Command::Run
         | Command::Status(_)
         | Command::Stop(_)
@@ -367,8 +376,7 @@ fn dispatch(command: Command, dirs: &Dirs) -> Result<(), CliError> {
         | Command::Eta(_)
         | Command::Wakes(_)
         | Command::Capture(_)
-        | Command::Keys { .. }
-        | Command::Service { .. } => Err(not_implemented()),
+        | Command::Keys { .. } => Err(not_implemented()),
     }
 }
 
