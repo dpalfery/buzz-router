@@ -47,3 +47,8 @@ Everything you need is inside your worktree under .squad/ (you cannot read outsi
 - T2.3 landed. cursor now owns: 2.6 -> 2.8 -> 3.2 -> 3.3 (then 3.4 once T2.7 lands). 2.8 is REMOVED from pi's list (pi: 2.4 -> 2.7 only).
 - opencode: AMEND only, then stop.
 - Always check `git log feat/buzz-router-v1` and tasks.md checkboxes before starting a task; skip any already landed.
+
+## LANE UPDATE 3
+- Landed: 2.1-2.4, 2.6, 2.8, 3.1, 3.2, 6.1, 6.2, AMEND.
+- opencode: 2.5 -> then 3.6 -> 3.9 (each only once its deps have landed on feat/buzz-router-v1: 3.6 and 3.9 need T3.4 from cursor; if not landed, stop and report).
+- pi: 2.7 (then stop).  cursor: 3.3 -> 3.4 (needs T2.7) -> 3.5 -> 3.7.
