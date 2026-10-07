@@ -836,6 +836,16 @@ conformance_case! {
     case_120 => "120-daily-budget-owner-not-blocked.json",
     case_121 => "121-bot-stop-not-control.json",
     case_122 => "122-foreign-bot-p-tag.json",
+    case_123 => "123-halted-bot-caused.json",
+    case_124 => "124-halted-human-anyone.json",
+    case_125 => "125-human-cap.json",
+    case_126 => "126-human-hourly-budget.json",
+    case_127 => "127-human-daily-budget.json",
+    case_128 => "128-halted-edit.json",
+    case_129 => "129-edit-stop-not-command.json",
+    case_130 => "130-foreign-bot-reply.json",
+    case_131 => "131-human-default-bot-ignored.json",
+    case_132 => "132-participant-non-root-parent.json",
 }
 
 #[test]

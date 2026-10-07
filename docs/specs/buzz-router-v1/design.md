@@ -1332,6 +1332,17 @@ The example shows only the first two of case 16's ten steps.
 | 119 | daily budget reached suppresses a bot-caused wake (`Budget`) |
 | 120 | daily budget reached doesn't block an owner-caused wake |
 | 121 | a bot's "stop" message is not a control command |
+| 122 | a foreign bot's `p` tag naming a local bot yields `Suppress(RespondTo)` (O4) |
+| 123 | halted bots suppress a bot-caused wake (`Halted`) |
+| 124 | halted bots suppress a human-caused wake for an `anyone` bot (`Halted`) |
+| 125 | the turn cap suppresses a human-caused wake (`Cap`) |
+| 126 | the hourly budget suppresses a human-caused wake (`Budget`) |
+| 127 | the daily budget suppresses a human-caused wake (`Budget`) |
+| 128 | halted bots suppress an edit target (`Halted`) |
+| 129 | an edit whose text contains "stop" is not a control command |
+| 130 | a foreign bot replying to a local bot yields `Suppress(RespondTo)` |
+| 131 | `default_bot` is not applied to a human message |
+| 132 | the participant rule applies when the parent is not the root |
 
 ### 16.2 Engine tests (`crates/buzz-router/tests/engine_*.rs`)
 

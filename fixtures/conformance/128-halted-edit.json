@@ -1,0 +1,22 @@
+{
+  "case": 128,
+  "requirement": "16.3",
+  "title": "Every bot is halted and O edits a message to add a p tag for B",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": true, "bots": []},
+  "wake_counts": {},
+  "thread": {"root": "o1", "participants": ["A"], "discussion": false,
+             "round_id": "o1", "round_mode": "direct", "turns_used": {"A": 1}},
+  "edit_target": {"message": "o1"},
+  "event": {"label": "e1", "author": "O", "kind": 40003, "content": "what do you think?", "p": ["B"]},
+  "expect": {
+    "control": null,
+    "decisions": [{"suppress": {"bot": "B", "why": "halted"}}],
+    "thread_update": {"add_participants": ["B"]},
+    "wake_mode": "direct"
+  }
+}
