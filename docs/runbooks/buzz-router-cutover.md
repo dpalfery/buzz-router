@@ -100,6 +100,12 @@ with `KeepAlive`, Linux `systemd --user` unit with `Restart=always`,
 Windows Task Scheduler logon task with restart on failure). Confirm the
 service is running with `buzz-router service status`.
 
+Supervision check (Windows): kill the router process (Task Manager, or
+`taskkill /F /IM buzz-router.exe`) and confirm `buzz-router service
+status` reports Running again within about a minute — the task's
+every-minute trigger restarts it even when restart on failure does not
+fire.
+
 ## 6. Smoke test (R63.7)
 
 David posts, for **each bot** on this machine:

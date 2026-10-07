@@ -148,6 +148,18 @@ fn task_xml_has_logon_trigger_principal_restart_and_exec() {
     )));
 }
 
+#[test]
+fn task_xml_restarts_a_dead_router_every_minute() {
+    // R56.4: RestartOnFailure may not fire when the process exits non-zero, so a
+    // repeating trigger restarts it within about a minute instead.
+    let xml = render_task_xml(r"C:\Users\me\bin\buzz-router.exe", r"HOST\me");
+
+    assert!(xml.contains("<TimeTrigger>"));
+    assert!(xml.contains(
+        "<Repetition>\n        <Interval>PT1M</Interval>\n        <StopAtDurationEnd>false</StopAtDurationEnd>\n      </Repetition>"
+    ));
+}
+
 // ---- macOS commands ----
 
 #[test]

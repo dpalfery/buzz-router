@@ -10,8 +10,10 @@ use super::{
 /// The task name.
 pub const TASK: &str = "buzz-router";
 
-/// The task that runs `<exe> run` at `user`'s logon, as that user, and restarts it on failure.
-/// The text declares UTF-16, the encoding [`install`] writes it in.
+/// The task that runs `<exe> run` at `user`'s logon, as that user, restarts it on failure,
+/// and starts it every minute so a crashed router returns within about a minute even when
+/// `RestartOnFailure` does not fire (R56.4). The text declares UTF-16, the encoding
+/// [`install`] writes it in.
 pub fn render_task_xml(exe: &str, user: &str) -> String {
     let exe = xml_escape(exe);
     let user = xml_escape(user);
@@ -26,6 +28,14 @@ pub fn render_task_xml(exe: &str, user: &str) -> String {
       <Enabled>true</Enabled>
       <UserId>{user}</UserId>
     </LogonTrigger>
+    <TimeTrigger>
+      <Enabled>true</Enabled>
+      <StartBoundary>2026-01-01T00:00:00</StartBoundary>
+      <Repetition>
+        <Interval>PT1M</Interval>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
+      </Repetition>
+    </TimeTrigger>
   </Triggers>
   <Principals>
     <Principal id="Author">

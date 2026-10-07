@@ -1177,6 +1177,7 @@ The router writes its own service definitions and drives the OS tools through `s
 **Windows** (R56.4):
 - **Install:** write a Task Scheduler XML to `data_dir\buzz-router-task.xml` with:
   - a `LogonTrigger` for the current user;
+  - a `TimeTrigger` repeating every minute indefinitely (`Repetition` `Interval PT1M`, no `Duration`, `StopAtDurationEnd false`), so a crashed router is restarted within about a minute even when `RestartOnFailure` does not fire for a non-zero exit (R56.4);
   - `Principal` `LogonType=InteractiveToken`, `RunLevel=LeastPrivilege`, so it runs as the user and the Credential Manager works;
   - `Settings`: `RestartOnFailure` (`Interval PT1M`, `Count 999`), `ExecutionTimeLimit PT0S`, `MultipleInstancesPolicy IgnoreNew`, `DisallowStartIfOnBatteries false`, `StopIfGoingOnBatteries false`;
   - `Exec` = `<exe> run`.
