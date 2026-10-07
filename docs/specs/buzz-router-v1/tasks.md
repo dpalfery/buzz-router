@@ -1292,7 +1292,7 @@ All tasks here are **[Docker + local Buzz relay]**. They are acceptance verifica
 
 ## Milestone 8: documentation and closeout
 
-- [ ] **8.1 Cutover runbook** *(no-test task)*
+- [x] **8.1 Cutover runbook** *(no-test task)*
   - **Objective:** Write the operator cutover runbook.
   - **Files:** `docs/runbooks/buzz-router-cutover.md`, with frontmatter `doc-type: runbook`, `status: draft`, `component: buzz-router` and `owner: dpalfery`. Link it from the documentation index if the `kyber-weave-docs` skill requires that.
   - **Design:** §17.
@@ -1307,8 +1307,8 @@ All tasks here are **[Docker + local Buzz relay]**. They are acceptance verifica
   - **Replacement validation:**
     - `kyber-weave docs validate .` reports 0 critical, 0 error, 0 warning and 0 info;
     - a checklist in the review notes mapping each R63 criterion and R29.8 to its runbook section.
-  - [ ] Runbook written
-  - [ ] Validation recorded
+  - [x] Runbook written
+  - [x] Validation recorded
 
 - [ ] **8.2 Specification closeout**
   - **Objective:** Retire the specification after delivery, following the product-owner closeout procedure.
