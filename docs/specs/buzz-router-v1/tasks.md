@@ -646,9 +646,9 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - Publishing a reply for a halted bot returns an error, and nothing is sent.
     - *RED:* compile error, unresolved `buzz_router::publish::build_reply`.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 - [x] **2.8 `capture` command**
   - **Objective:** Dump a channel's events as JSON Lines.

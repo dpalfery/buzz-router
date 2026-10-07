@@ -11,6 +11,7 @@ pub mod ingest;
 pub mod keys;
 mod logging;
 pub mod paths;
+pub mod publish;
 pub mod relay;
 pub mod service;
 pub mod store;
