@@ -7,5 +7,6 @@ pub mod cli;
 pub mod keys;
 mod logging;
 pub mod paths;
+pub mod relay;
 pub mod service;
 pub mod store;

@@ -547,9 +547,9 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - `relay_ws_to_http` maps `wss` to `https` and `ws` to `http`, and trims a trailing `/`.
     - *RED:* compile error, unresolved `buzz_router::relay::rest::RestClient`.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 - [ ] **2.4 WebSocket connection, NIP-42 auth, publish acks and reconnect**
   - **Objective:** Implement one connection task per bot: authentication, publish with OK tracking, ping and pong, and the reconnect ladder.
