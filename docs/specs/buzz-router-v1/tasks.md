@@ -18,7 +18,7 @@ last-reviewed: 2026-10-06
 
 ## Progress
 
-**Implementation status:** In progress. Paused by David on 2026-10-06 after milestone 1.
+**Implementation status:** Complete. All milestones landed; the review fix pass is in progress.
 
 | | |
 |---|---|
@@ -30,27 +30,27 @@ last-reviewed: 2026-10-06
 
 | Milestone | Tasks | Status |
 |---|---|---|
-| 1. router-core and conformance | 1.1–1.11 | 11 of 11 done. 3-OS CI green pending first CI run. |
-| 2. Relay I/O | 2.1–2.9 | Not started. **Resume point: 2.1** |
-| 3. Wake engine plus stop | 3.1–3.10 | Not started |
-| 4. State and recovery | 4.1–4.4 | Not started |
-| 5. Webhook adapter | 5.1–5.2 | Not started |
-| 6. Packaging, CI and release | 6.1–6.4 | Not started |
-| 7. End-to-end acceptance | 7.1–7.5 | Not started |
-| 8. Docs and closeout | 8.1–8.2 | Not started |
+| 1. router-core and conformance | 1.1–1.11 | 11 of 11 done. |
+| 2. Relay I/O | 2.1–2.9 | 9 of 9 done. |
+| 3. Wake engine plus stop | 3.1–3.10 | 10 of 10 done. |
+| 4. State and recovery | 4.1–4.4 | 4 of 4 done. |
+| 5. Webhook adapter | 5.1–5.2 | 2 of 2 done. |
+| 6. Packaging, CI and release | 6.1–6.4 | Done except CI-run evidence (6.3, 6.4 pending a CI run). |
+| 7. End-to-end acceptance | 7.1–7.5 | Done except CI-run evidence (7.5 pending a CI run). |
+| 8. Docs and closeout | 8.1–8.2 | 8.1 done; 8.2 open. |
 
-### Open items for the owner
+### Decided items from the owner
 
-Raised during milestone 1. Each needs David's decision before the task that depends on it.
+Raised during milestone 1. All decided by David; the decisions are applied in code and spec text.
 
-- **O1, ci.yml (blocks 1.1 criterion 6 and all Linux/Windows CI).** github-devops declined to write `.github/workflows/ci.yml` without a declared `<github-actions-coding-standard>`. It asks whether it may write ci.yml exactly as specified in 1.1 criterion 6, with actions pinned by SHA like `docs-gate.yml`.
-- **O2, F5, config edge cases.** The architect settled the config type shapes. Still open: duplicate channel ids; `max_concurrent = 0` or an empty command; a bot named `all`.
-- **O3, F6.** A bare owner name in reply `p` tags: the contract literal versus R44.4. T1.4 implemented an interim reading (every owner pubkey for a bare whole-word `owner.name`).
-- **O4, F8.** R17.4 versus R15.2 and design §5.5 on foreign-bot `p` tags.
-- **O5, F9.** Replay doesn't invent thread state for roots it never saw.
-- **O6, keyring 4.x.** keyring 4.x splits into `keyring-core` plus store crates. Design §11 and the task text assume `keyring::Entry` and keyring's own mock. T1.1 pinned keyring 4.2.0 (feature `v1`) with keyring-core 1.0.0.
-- **O7, task 6.1.** The `ErrorKind::Key` question.
-- **O8, DD-19.** The `~` expansion of the adapter `cwd` isn't in any task.
+- **O1, ci.yml — decided: yes.** github-devops may write `.github/workflows/ci.yml` exactly per task 1.1 criterion 6, with actions pinned by SHA like `docs-gate.yml`.
+- **O2, F5, config edge cases — decided: reject.** Config validation rejects duplicate channel ids, `max_concurrent = 0`, an empty command, and a bot named `all`, each with a clear `ConfigIssue`.
+- **O3, F6 — decided: keep the interim reading.** A bare whole-word owner name in reply `p` tags maps to every owner pubkey; recorded as a spec clarification.
+- **O4, F8 — decided: Reading 1.** A foreign bot's `p` tag naming a local bot yields `Suppress(RespondTo)`: R15.2 wins over R17.4 for foreign bots. R17.4 now says so.
+- **O5, F9 — decided: current behaviour.** Replay does not invent thread state for roots it never saw; documented.
+- **O6, keyring 4.x — decided: accept.** Accept keyring 4.2.0 plus the keyring-core pin; design §11 matches.
+- **O7, task 6.1 — decided: add it.** `ErrorKind::Key` exists (exit code 3, label `key_error`); design §14 matches. `keys check` uses it.
+- **O8, DD-19 — decided: add it.** The `~` expansion of the adapter `cwd` is part of task 3.5.
 
 ## How to work these tasks
 
@@ -508,7 +508,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
   - [x] GREEN
   - [x] REFACTOR
 
-- [ ] **2.2 Signing keys from files**
+- [x] **2.2 Signing keys from files**
   - **Objective:** Load `file:<path>` keys with the Unix permission check. Keychain loading comes in task 6.1.
   - **Files:** `crates/buzz-router/src/keys.rs`, `crates/buzz-router/tests/keys_file.rs`.
   - **Design:** §11.
@@ -528,7 +528,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
   - [x] GREEN
   - [x] REFACTOR
 
-- [ ] **2.3 Relay REST client and `RelayPort`**
+- [x] **2.3 Relay REST client and `RelayPort`**
   - **Objective:** Implement `RestClient` (NIP-98, `x-auth-tag`, retries, paging, `submit_event`) and define the `RelayPort` trait.
   - **Files:** `crates/buzz-router/src/relay/{mod.rs,rest.rs}`, `crates/buzz-router/tests/relay_rest.rs`.
   - **Design:** §10.4, §6.1 (ports).
@@ -551,7 +551,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
   - [x] GREEN
   - [x] REFACTOR
 
-- [ ] **2.4 WebSocket connection, NIP-42 auth, publish acks and reconnect**
+- [x] **2.4 WebSocket connection, NIP-42 auth, publish acks and reconnect**
   - **Objective:** Implement one connection task per bot: authentication, publish with OK tracking, ping and pong, and the reconnect ladder.
   - **Files:** `crates/buzz-router/src/relay/{conn.rs,auth.rs}`, `crates/buzz-router/tests/relay_conn.rs`.
   - **Design:** §10.1, §10.5, §6.8 (publish transport).
@@ -619,7 +619,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
   - [x] GREEN
   - [x] REFACTOR
 
-- [ ] **2.7 Publisher: replies, status notes, reactions, typing**
+- [x] **2.7 Publisher: replies, status notes, reactions, typing**
   - **Objective:** Build and publish every outbound event type, with the `posts` row written before sending, the REST fallback, and the halt refusal.
   - **Files:** `crates/buzz-router/src/publish.rs`, `crates/buzz-router/tests/publish.rs`.
   - **Design:** §6.8, DD-6, DD-7, DD-18.
@@ -670,7 +670,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
   - [x] GREEN
   - [x] REFACTOR
 
-- [ ] **2.9 Relay I/O against a local Buzz relay [Docker + local Buzz relay]**
+- [x] **2.9 Relay I/O against a local Buzz relay [Docker + local Buzz relay]**
   - **Objective:** Prove the relay layer against a real local Buzz relay, as brief §17.2 asks.
   - **Files:** `crates/buzz-router/tests/e2e_support/mod.rs` (relay URL from `BUZZ_E2E_RELAY_URL`, identities, channel provisioning with `build_create_channel` and `build_add_member` over REST), `crates/buzz-router/tests/e2e_relay_io.rs`.
   - **Design:** §10, §16.4.
@@ -938,7 +938,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
   - [x] GREEN
   - [x] REFACTOR
 
-- [ ] **3.10 `run` wiring**
+- [x] **3.10 `run` wiring**
   - **Objective:** Wire the daemon startup (§6.2 steps 1–5 and 7): rustls provider, config, store, admin token, keys, halts, core, ingest, API listeners and relay connections.
   - **Files:** `crates/buzz-router/src/cli/run.rs`, wiring in `crates/buzz-router/src/core/mod.rs`, `crates/buzz-router/tests/cli_run.rs`.
   - **Design:** §6.2, DD-23, DD-24.
@@ -967,7 +967,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
 
 ## Milestone 4: state and recovery (brief §17.4)
 
-- [ ] **4.1 Startup recovery and missed messages**
+- [x] **4.1 Startup recovery and missed messages**
   - **Objective:** Implement recovery of interrupted wakes (§6.2 step 6), the rule for missed owner messages older than 24 hours (step 8), and halts loaded before connecting.
   - **Files:** recovery in `crates/buzz-router/src/core/mod.rs` and ordering in `src/cli/run.rs`; `crates/buzz-router/tests/{engine_restart.rs,engine_missed.rs}`.
   - **Design:** §6.2, DD-14, DA-2.
@@ -1081,7 +1081,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
   - [x] GREEN
   - [x] REFACTOR
 
-- [ ] **5.2 Webhook wakes through the engine and the tailnet API**
+- [x] **5.2 Webhook wakes through the engine and the tailnet API**
   - **Objective:** Select adapters per bot, use `public_url` as the payload's API URL, end async wakes at the first post or pass, and stop webhook wakes.
   - **Files:** adapter selection in `crates/buzz-router/src/core/dispatch.rs`; `crates/buzz-router/tests/engine_webhook.rs`.
   - **Design:** §6.6 (endings), §7.2, §8, A6.
@@ -1274,7 +1274,7 @@ All tasks here are **[Docker + local Buzz relay]**. They are acceptance verifica
   - [x] REFACTOR
   - **Done:** T7.4 commit. RED: the scenario files did not exist. `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 cargo test -p buzz-router --test e2e_crash_recovery --test e2e_unmanaged -- --test-threads=1`: both pass against the local Docker relay under the relay lock (E5 in 46 s, E6 in 1 s). No product defects found; no product fix needed.
 
-- [ ] **7.5 E7: the E2E CI job [Docker + local Buzz relay]** *(no-test task)*
+- [x] **7.5 E7: the E2E CI job [Docker + local Buzz relay]** *(no-test task)*
   - **Objective:** Add the `e2e` job to `ci.yml` and make the whole matrix green (E7).
   - **Files:** `.github/workflows/ci.yml`.
   - **Design:** §15, DA-1.

@@ -18,7 +18,7 @@ Each specification gets a folder `docs/specs/<feature>/` containing `requirement
 
 | Specification | Status | Requirements | Design | Tasks | Goal |
 |---|---|---|---|---|---|
-| [buzz-router-v1](buzz-router-v1/) | In progress: milestone 1 done, paused; [PR #1](https://github.com/dpalfery/buzz-router/pull/1), [progress](buzz-router-v1/tasks.md#progress) | [Approved](buzz-router-v1/requirements.md) | [Approved](buzz-router-v1/design.md) | [Approved](buzz-router-v1/tasks.md) | One shared Buzz listener, router and gatekeeper for every bot machine, replacing the per-bot listeners. Input: [design brief](buzz-router-v1/brief.md). |
+| [buzz-router-v1](buzz-router-v1/) | Complete; review fixes in progress; [PR #1](https://github.com/dpalfery/buzz-router/pull/1), [progress](buzz-router-v1/tasks.md#progress) | [Approved](buzz-router-v1/requirements.md) | [Approved](buzz-router-v1/design.md) | [Approved](buzz-router-v1/tasks.md) | One shared Buzz listener, router and gatekeeper for every bot machine, replacing the per-bot listeners. Input: [design brief](buzz-router-v1/brief.md). |
 
 ## Archive
 
