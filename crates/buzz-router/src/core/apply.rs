@@ -550,9 +550,9 @@ impl Core {
     }
 
     /// Flags a kind-9 event signed by a local bot's key that the router didn't publish
-    /// (design 6.3 step 2, R51): the in-memory counter grows for every such post, while the
-    /// warning itself (the reaction plus the log line) fires at most once per bot per hour.
-    /// The event still routes normally afterwards.
+    /// (design 6.3 step 2, R51): the in-memory counter grows for every such post, every post
+    /// gets a ⚠️ reaction (R51.1), and the log line fires at most once per bot per hour
+    /// (R51.2). The event still routes normally afterwards.
     fn flag_unmanaged(&mut self, ev: &EnrichedEvent) {
         if ev.in_event.kind != KIND_MESSAGE {
             return;
@@ -564,6 +564,7 @@ impl Core {
             Ok(true) => {}
             Ok(false) => {
                 self.counters.unmanaged_posts += 1;
+                self.react(&bot, &ev.event.id, WARNING);
                 let now_ms = self.clock.now().timestamp_millis();
                 let due = self
                     .unmanaged_warned_at
@@ -572,7 +573,6 @@ impl Core {
                 if due {
                     self.unmanaged_warned_at.insert(bot.clone(), now_ms);
                     tracing::warn!(bot = %bot, event_id = %ev.in_event.id, "unmanaged post: the bot's key signed a post the router didn't publish");
-                    self.react(&bot, &ev.event.id, WARNING);
                 }
             }
             Err(error) => {

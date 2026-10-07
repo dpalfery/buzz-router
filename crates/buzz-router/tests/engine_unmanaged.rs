@@ -1,8 +1,8 @@
 //! Task 4.2: unmanaged-post detection (design 6.3 step 2, R44.7, R51, R65.9).
 //!
 //! A kind-9 event signed by a local bot's key whose id isn't in `posts` was published by
-//! something other than the router. The bot reacts ⚠️ on it and the in-memory counter grows;
-//! the warning (reaction plus log line) fires at most once per bot per hour.
+//! something other than the router. The bot reacts ⚠️ on every such post and the in-memory
+//! counter grows; the log line fires at most once per bot per hour.
 
 #![allow(
     clippy::unwrap_used,
@@ -90,29 +90,33 @@ async fn a_router_published_echo_is_not_flagged() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn warnings_are_rate_limited_to_one_per_bot_per_hour() {
+async fn every_unmanaged_post_gets_a_warning() {
+    // R51.1: every unmanaged post gets ⚠️. R51.2 rate-limits only the log line, so the
+    // second stray still reacts even though it is only minutes after the first.
     let (core, relay, _store) = spawn_test_core();
     let first = top_level(&keys("A"), channel(), "stray one", base_secs());
     core.ingest(bot("A"), first, Source::Live);
     core.flush().await;
     assert_eq!(warnings_by(&relay.published(), "A").len(), 1);
 
-    // Ten minutes later: counted, but no second warning.
+    // Ten minutes later: counted, and warned again.
     tokio::time::sleep(Duration::from_secs(600)).await;
     let second = top_level(&keys("A"), channel(), "stray two", base_secs() + 600);
-    core.ingest(bot("A"), second, Source::Live);
+    core.ingest(bot("A"), second.clone(), Source::Live);
     core.flush().await;
-    assert_eq!(warnings_by(&relay.published(), "A").len(), 1);
+    let warnings = warnings_by(&relay.published(), "A");
+    assert_eq!(warnings.len(), 2);
+    assert_eq!(e_tags(&warnings[1]), vec![second.id.to_hex()]);
     assert_eq!(core.debug_counters().await.unmanaged_posts, 2);
 
-    // Sixty-one minutes after that: the warning fires again.
+    // Sixty-one minutes after that: warned a third time.
     tokio::time::sleep(Duration::from_secs(3_660)).await;
     let third = top_level(&keys("A"), channel(), "stray three", base_secs() + 4_260);
     core.ingest(bot("A"), third.clone(), Source::Live);
     core.flush().await;
     let warnings = warnings_by(&relay.published(), "A");
-    assert_eq!(warnings.len(), 2);
-    assert_eq!(e_tags(&warnings[1]), vec![third.id.to_hex()]);
+    assert_eq!(warnings.len(), 3);
+    assert_eq!(e_tags(&warnings[2]), vec![third.id.to_hex()]);
     assert_eq!(core.debug_counters().await.unmanaged_posts, 3);
 }
 
