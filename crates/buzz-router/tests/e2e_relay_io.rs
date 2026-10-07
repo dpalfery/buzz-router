@@ -8,7 +8,7 @@
 //!
 //! ```sh
 //! BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 \
-//!   cargo test -p buzz-router --test e2e_relay_io -- --test-threads=1
+//!   cargo test -p buzz-router --test e2e_relay_io -- --ignored --test-threads=1
 //! ```
 
 #![allow(
@@ -79,6 +79,7 @@ fn synced(url: &str, bot_keys: &nostr::Keys) -> SyncedConn {
 }
 
 #[tokio::test]
+#[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn nip42_auth_standalone_succeeds() {
     let Some(url) = relay_or_skip() else { return };
     let ids = fresh_identities();
@@ -87,6 +88,7 @@ async fn nip42_auth_standalone_succeeds() {
 }
 
 #[tokio::test]
+#[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn owner_attested_auth_succeeds() {
     let Some(url) = relay_or_skip() else { return };
     let ids = fresh_identities();
@@ -97,6 +99,7 @@ async fn owner_attested_auth_succeeds() {
 }
 
 #[tokio::test]
+#[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn discovery_finds_the_provisioned_channel() {
     let Some(url) = relay_or_skip() else { return };
     let ids = fresh_identities();
@@ -118,6 +121,7 @@ async fn discovery_finds_the_provisioned_channel() {
 }
 
 #[tokio::test]
+#[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn live_owner_message_arrives() {
     let Some(url) = relay_or_skip() else { return };
     let ids = fresh_identities();
@@ -140,6 +144,7 @@ async fn live_owner_message_arrives() {
 }
 
 #[tokio::test]
+#[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn missed_messages_arrive_through_backfill() {
     let Some(url) = relay_or_skip() else { return };
     let ids = fresh_identities();
@@ -205,6 +210,7 @@ async fn missed_messages_arrive_through_backfill() {
 }
 
 #[tokio::test]
+#[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn thread_fetch_returns_root_and_replies() {
     let Some(url) = relay_or_skip() else { return };
     let ids = fresh_identities();
@@ -235,6 +241,7 @@ async fn thread_fetch_returns_root_and_replies() {
 }
 
 #[tokio::test]
+#[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn reply_and_reaction_are_visible_through_rest() {
     let Some(url) = relay_or_skip() else { return };
     let ids = fresh_identities();
@@ -282,6 +289,7 @@ async fn reply_and_reaction_are_visible_through_rest() {
 }
 
 #[tokio::test]
+#[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn typing_indicator_gets_relay_ok() {
     let Some(url) = relay_or_skip() else { return };
     let ids = fresh_identities();

@@ -5,7 +5,7 @@
 //!
 //! ```sh
 //! BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 \
-//!   cargo test -p buzz-router --test e2e_harness_smoke -- --test-threads=1
+//!   cargo test -p buzz-router --test e2e_harness_smoke -- --ignored --test-threads=1
 //! ```
 
 mod e2e_support;
@@ -14,6 +14,7 @@ mod support;
 use e2e_support::{E2e, EYES};
 
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn router_connects_all_bots_and_answers_a_mention() {
     let Some(mut e2e) = E2e::start("e2e-smoke", 0).await else {
         return;

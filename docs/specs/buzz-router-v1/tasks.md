@@ -685,7 +685,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
        4. Configure relay auth to admit the four throwaway test identities, and record the settings used.
     2. Tests are skipped unless `BUZZ_E2E=1`.
   - **Test contract:**
-    - *Run:* `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 cargo test -p buzz-router --test e2e_relay_io -- --test-threads=1`
+    - *Run:* `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 cargo test -p buzz-router --test e2e_relay_io -- --ignored --test-threads=1`
     - *Behaviour:*
       - Standalone NIP-42 auth succeeds, and so does owner-attested auth with a NIP-OA tag.
       - Discovery finds the provisioned channel.
@@ -1207,7 +1207,7 @@ All tasks here are **[Docker + local Buzz relay]**. They are acceptance verifica
   - **Agents:** `test-dev`; `tauri-dev` for product fixes.
   - **Acceptance criteria:** Never touches the live relay or real keys. The relay setup is as in task 2.9.
   - **Test contract:**
-    - *Run:* `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 cargo test -p buzz-router --test e2e_harness_smoke -- --test-threads=1`
+    - *Run:* `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 cargo test -p buzz-router --test e2e_harness_smoke -- --ignored --test-threads=1`
     - *Behaviour:* the router starts; `status` shows all three bots connected; O posting "@A ping" gets 👀 and a reply from A.
     - *RED:* the harness module doesn't exist yet.
     - *GREEN:* passes.
@@ -1224,7 +1224,7 @@ All tasks here are **[Docker + local Buzz relay]**. They are acceptance verifica
   - **Agents:** `test-dev`; `tauri-dev` for product fixes.
   - **Acceptance criteria:** Each scenario test asserts exactly its brief pass condition.
   - **Test contract:**
-    - *Run:* `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=… cargo test -p buzz-router --test e2e_thread_reply --test e2e_status_note -- --test-threads=1`
+    - *Run:* `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=… cargo test -p buzz-router --test e2e_thread_reply --test e2e_status_note -- --ignored --test-threads=1`
     - *Behaviour:*
       - **E1:** O posts "@A", A replies, then O replies untagged in the thread. A is woken and replies.
       - **E4:** O posts "@A" with a 60 s task. 👀 appears immediately, one status note at about 20 s, and the final reply is threaded under O's message.
@@ -1243,7 +1243,7 @@ All tasks here are **[Docker + local Buzz relay]**. They are acceptance verifica
   - **Agents:** `test-dev`; `tauri-dev` for product fixes.
   - **Acceptance criteria:** Each scenario test asserts exactly its brief pass condition.
   - **Test contract:**
-    - *Run:* `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=… cargo test -p buzz-router --test e2e_everyone --test e2e_stop -- --test-threads=1`
+    - *Run:* `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=… cargo test -p buzz-router --test e2e_everyone --test e2e_stop -- --ignored --test-threads=1`
     - *Behaviour:*
       - **E2:** "@everyone" gets 👀 from A, B and C within 5 s; no bot exceeds 4 wakes; the thread goes quiet.
       - **E3:** "stop" during E2 leaves no agent process within 5 s; 🛑 from each bot; nothing is published afterwards; the halt survives a router restart; "resume" brings ▶️ and normal routing.
@@ -1263,7 +1263,7 @@ All tasks here are **[Docker + local Buzz relay]**. They are acceptance verifica
   - **Agents:** `test-dev`; `tauri-dev` for product fixes.
   - **Acceptance criteria:** Each scenario test asserts exactly its brief pass condition.
   - **Test contract:**
-    - *Run:* `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=… cargo test -p buzz-router --test e2e_crash_recovery --test e2e_unmanaged -- --test-threads=1`
+    - *Run:* `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=… cargo test -p buzz-router --test e2e_crash_recovery --test e2e_unmanaged -- --ignored --test-threads=1`
     - *Behaviour:*
       - **E5:** kill the router child mid-wake, O posts while it's down, then restart. The interrupted wake is re-run exactly once, the message sent during the downtime is answered, and there are no duplicate replies.
       - **E6:** publishing directly with bot A's key gets ⚠️ on that post, and `status` shows `unmanaged_posts: 1`.
@@ -1286,7 +1286,7 @@ All tasks here are **[Docker + local Buzz relay]**. They are acceptance verifica
        1. checks out Buzz at the pinned rev;
        2. runs `docker compose up -d postgres redis`;
        3. builds and runs `buzz-relay` with `.env.example` and migrations, plus the test-identity auth settings recorded in task 2.9;
-       4. runs `BUZZ_E2E=1 cargo test -p buzz-router --test 'e2e_*' -- --test-threads=1`.
+       4. runs `BUZZ_E2E=1 cargo test -p buzz-router --test 'e2e_*' -- --ignored --test-threads=1`.
     2. Native macOS and Windows E2E legs are added with `continue-on-error: true` until David decides DA-1.
   - **Replacement validation:** a green `e2e` job plus a green three-OS test matrix on the same commit, with the run URL recorded.
   - [x] Workflow updated

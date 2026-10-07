@@ -6,7 +6,7 @@
 //!
 //! ```sh
 //! BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 \
-//!   cargo test -p buzz-router --test e2e_status_note -- --test-threads=1
+//!   cargo test -p buzz-router --test e2e_status_note -- --ignored --test-threads=1
 //! ```
 
 mod e2e_support;
@@ -31,6 +31,7 @@ fn e_tag(event: &nostr::Event, marker: &str) -> Option<String> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn e4_long_task_gets_eyes_one_status_note_and_a_threaded_reply() {
     let Some(mut e2e) = E2e::start("e2e-e4", TASK_SECS).await else {
         return;

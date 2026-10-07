@@ -119,7 +119,7 @@ jobs:
 
       - name: End-to-end tests
         shell: bash
-        run: BUZZ_E2E=1 cargo test -p buzz-router --locked --test 'e2e_*' -- --test-threads=1
+        run: BUZZ_E2E=1 cargo test -p buzz-router --locked --test 'e2e_*' -- --ignored --test-threads=1
 
       - name: Relay log
         if: failure()

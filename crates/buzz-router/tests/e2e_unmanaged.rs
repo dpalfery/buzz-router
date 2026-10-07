@@ -6,7 +6,7 @@
 //!
 //! ```sh
 //! BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 \
-//!   cargo test -p buzz-router --test e2e_unmanaged -- --test-threads=1
+//!   cargo test -p buzz-router --test e2e_unmanaged -- --ignored --test-threads=1
 //! ```
 
 mod e2e_support;
@@ -15,6 +15,7 @@ mod support;
 use e2e_support::{E2e, WARNING};
 
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn direct_bot_post_gets_a_warning_and_is_counted() {
     let Some(mut e2e) = E2e::start("e2e-unmanaged", 0).await else {
         return;

@@ -1222,7 +1222,7 @@ Requirements: 5.9, 58, 60, 64.2, 65.1, 66.8.
   - check out Buzz at the pinned rev;
   - `docker compose up -d postgres redis` from Buzz's `docker-compose.yml`;
   - build and run `buzz-relay` with Buzz's `.env.example` and migrations, as `just relay` does;
-  - run `BUZZ_E2E=1 cargo test -p buzz-router --test 'e2e_*' -- --test-threads=1`.
+  - run `BUZZ_E2E=1 cargo test -p buzz-router --test 'e2e_*' -- --ignored --test-threads=1`.
 
   The macOS and Windows E2E legs are covered by DA-1.
 
@@ -1390,7 +1390,7 @@ Tests find it through `test_agent_path()` in `crates/buzz-router/tests/support/m
 
 ### 16.4 End-to-end harness (`crates/buzz-router/tests/e2e_*.rs`)
 
-The tests are skipped unless `BUZZ_E2E=1`, and they read `BUZZ_E2E_RELAY_URL`. They never use the live relay or real keys (R66.1).
+The tests are `#[ignore]`d, so a plain `cargo test` reports them as ignored rather than passed; the e2e job runs them with `--ignored` and `BUZZ_E2E=1`. They read `BUZZ_E2E_RELAY_URL`. They never use the live relay or real keys (R66.1).
 
 **Setup:**
 1. Generate four throwaway identities (owner O, bots A, B, C).

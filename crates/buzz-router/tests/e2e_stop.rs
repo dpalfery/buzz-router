@@ -8,7 +8,7 @@
 //!
 //! ```sh
 //! BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 \
-//!   cargo test -p buzz-router --test e2e_stop -- --test-threads=1
+//!   cargo test -p buzz-router --test e2e_stop -- --ignored --test-threads=1
 //! ```
 
 #![allow(
@@ -62,6 +62,7 @@ fn agent_pids(e2e: &E2e) -> Vec<u32> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn stop_kills_every_wake_and_the_halt_survives_a_restart() {
     let Some(mut e2e) = E2e::start("e2e-stop", 30).await else {
         return;

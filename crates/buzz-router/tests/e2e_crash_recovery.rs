@@ -7,7 +7,7 @@
 //!
 //! ```sh
 //! BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 \
-//!   cargo test -p buzz-router --test e2e_crash_recovery -- --test-threads=1
+//!   cargo test -p buzz-router --test e2e_crash_recovery -- --ignored --test-threads=1
 //! ```
 
 mod e2e_support;
@@ -18,6 +18,7 @@ use std::time::Duration;
 use e2e_support::{E2e, EYES};
 
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn killed_mid_wake_reruns_once_and_answers_the_downtime_message() {
     let Some(mut e2e) = E2e::start("e2e-crash", 10).await else {
         return;
