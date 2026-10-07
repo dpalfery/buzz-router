@@ -1031,7 +1031,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
   - [ ] GREEN
   - [ ] REFACTOR
 
-- [ ] **4.4 Logging: file output, rate limiting and redaction**
+- [x] **4.4 Logging: file output, rate limiting and redaction**
   - **Objective:** Complete `logging.rs`: the JSON file layer with daily rotation keeping 14 files, `BUZZ_ROUTER_LOG`, `LogLimiter`, and redaction of secrets.
   - **Files:** `crates/buzz-router/src/logging.rs`, `crates/buzz-router/tests/logging.rs`.
   - **Design:** §14, §2.
@@ -1048,9 +1048,10 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - **Redaction:** after a `FakeAdapter` wake and a run with a file key, the captured logs contain neither the wake token, the test nsec, nor the admin token.
     - *RED:* no file layer exists, so `LogLimiter` is unresolved.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** T4.4 commit (logging file layer, LogLimiter, redaction). `cargo test -p buzz-router --test logging`: 7 passed. Full workspace gate green.
 
 ## Milestone 5: webhook adapter (brief §17.5)
 
