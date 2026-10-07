@@ -73,3 +73,9 @@ All tasks are landed; this is the fix pass. Use the bug-crusher workflow per fin
 - #7 APPROVED: on SIGTERM/service stop, cancel each running wake and wait a short bounded time, kill if they don't stop; add kill_on_drop to command spawns. Update design text. (follow-up, assigned after Lane A)
 - #20 APPROVED: add a 1-minute repeating trigger (indefinite) with MultipleInstancesPolicy IgnoreNew to the Windows task XML in service/windows.rs, keep the logon trigger and RestartOnFailure; update design section 13 and add a manual "kill the process, confirm it returns within ~1 min" check to the runbook (docs/runbooks/buzz-router-cutover.md). (follow-up, assigned after Lane B)
 - #21 DROPPED: no rollback section needed.
+
+## LANE UPDATE 8: cycle-2 review fixes (see .squad/REVIEW2.md, findings A-G)
+- cursor: B (ingest Seen -> core advances that bot's cursor; core stays only writer), C (cursor read error -> redial, not Skip), G (without BUZZ_E2E=1 the ignored e2e tests must fail loudly or be skipped visibly, not pass).
+- opencode: A (GH_REPO env in release.yml publish job), F (refresh tasks.md progress table to the real current state: last commit, test count, conformance count, CI/e2e state; do NOT tick 8.2).
+- pi: D (single-instance lock file in the data dir taken before spawn_core; a second `run` exits with a clear error and exit code; test it; mention in design + runbook that ending the Windows task is no longer a lasting stop).
+- HELD: E (needs owner decision).
