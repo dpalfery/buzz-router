@@ -129,6 +129,9 @@ fn is_lock_contention(error: &std::io::Error) -> bool {
 
 /// Design 6.2 steps 3, 4 and 7, then waits for the shutdown signal.
 async fn serve(dirs: &Dirs, loaded: Loaded) -> Result<(), CliError> {
+    // Installed first, so a signal that arrives while the router is still starting is held until
+    // startup finishes and then shuts the router down cleanly, instead of killing the process.
+    let shutdown = ShutdownSignal::install();
     let Loaded {
         roster,
         roster_hash,
@@ -235,7 +238,7 @@ async fn serve(dirs: &Dirs, loaded: Loaded) -> Result<(), CliError> {
     }
     tracing::info!(bots = relays.len(), "buzz-router is running");
 
-    shutdown_signal().await;
+    shutdown.wait().await;
     tracing::info!("shutting down");
     core.shutdown().await;
     Ok(())
@@ -328,31 +331,55 @@ fn connect(
     })
 }
 
-/// Resolves on ctrl-c, or on SIGTERM on Unix.
-async fn shutdown_signal() {
+/// Listens for ctrl-c, and for SIGTERM on Unix. The handlers are registered when the value is
+/// created, so a signal that arrives before [`ShutdownSignal::wait`] is called is not lost.
+struct ShutdownSignal {
     #[cfg(unix)]
-    {
+    interrupt: Option<tokio::signal::unix::Signal>,
+    #[cfg(unix)]
+    terminate: Option<tokio::signal::unix::Signal>,
+}
+
+impl ShutdownSignal {
+    #[cfg(unix)]
+    fn install() -> Self {
         use tokio::signal::unix::{signal, SignalKind};
-        let ctrl_c = async {
-            if tokio::signal::ctrl_c().await.is_err() {
-                std::future::pending::<()>().await;
-            }
-        };
-        match signal(SignalKind::terminate()) {
-            Ok(mut terminate) => {
-                tokio::select! {
-                    () = ctrl_c => {}
-                    _ = terminate.recv() => {}
-                }
-            }
-            Err(error) => {
-                tracing::warn!(%error, "cannot listen for SIGTERM; only ctrl-c stops the daemon");
-                ctrl_c.await;
-            }
+        let interrupt = signal(SignalKind::interrupt())
+            .map_err(|error| tracing::warn!(%error, "cannot listen for ctrl-c"))
+            .ok();
+        let terminate = signal(SignalKind::terminate())
+            .map_err(|error| tracing::warn!(%error, "cannot listen for SIGTERM"))
+            .ok();
+        Self {
+            interrupt,
+            terminate,
         }
     }
+
     #[cfg(not(unix))]
-    {
+    fn install() -> Self {
+        Self {}
+    }
+
+    /// Resolves on the first shutdown signal.
+    #[cfg(unix)]
+    async fn wait(mut self) {
+        async fn recv(signal: &mut Option<tokio::signal::unix::Signal>) {
+            match signal {
+                Some(signal) => {
+                    signal.recv().await;
+                }
+                None => std::future::pending::<()>().await,
+            }
+        }
+        tokio::select! {
+            () = recv(&mut self.interrupt) => {}
+            () = recv(&mut self.terminate) => {}
+        }
+    }
+
+    #[cfg(not(unix))]
+    async fn wait(self) {
         if let Err(error) = tokio::signal::ctrl_c().await {
             tracing::warn!(%error, "cannot listen for ctrl-c");
             std::future::pending::<()>().await;
