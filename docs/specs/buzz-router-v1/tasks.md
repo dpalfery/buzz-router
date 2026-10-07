@@ -5,7 +5,7 @@ doc-type: spec
 status: current
 component: buzz-router
 owner: dpalfery
-last-reviewed: 2026-10-06
+last-reviewed: 2026-10-07
 ---
 
 # buzz-router v1 Implementation Tasks
@@ -18,15 +18,18 @@ last-reviewed: 2026-10-06
 
 ## Progress
 
-**Implementation status:** Complete. All milestones landed; the review fix pass is in progress.
+**Implementation status:** Tasks 1.1–8.1 landed. Two independent council reviews are done and all findings are fixed except deliberately deferred/dropped ones. Full gate green locally (fmt, clippy `-D warnings`, `cargo test --workspace --locked`, `kyber-weave docs validate .`); all 15 e2e tests pass against the local Docker Buzz relay (`scripts/e2e-relay.sh`, `ghcr.io/block/buzz:sha-f0eb557`) with `BUZZ_E2E=1 --ignored` (orchestrator-verified 2026-10-07). Closeout (8.2) is open: 3-OS CI, the release dry run and the Windows Task Scheduler crash-restart check are not yet verified.
 
 | | |
 |---|---|
 | Branch | `feat/buzz-router-v1` (pushed to origin) |
 | Pull request | [#1 (draft)](https://github.com/dpalfery/buzz-router/pull/1) |
-| Last task commit | `abc3065` (FIX cycle2 A; review-fix pass in progress, 8.2 open) |
-| Tests | 670 passed, 0 failed, 15 ignored (`cargo test --workspace --locked`, macOS arm64). `clippy -D warnings` and `fmt --check` are clean. `router-core` is tokio-free. 69 conformance fixtures (70 conformance tests including registration). The 15 ignored tests are the e2e suite, which runs only with `BUZZ_E2E=1` against the local relay via `scripts/e2e-relay.sh`. |
+| Last task commit | `2e7607d` (FIX cycle2 G; 8.2 closeout recorded, still open) |
+| Tests | 670 passed, 0 failed, 15 ignored (`cargo test --workspace --locked`, macOS arm64). `clippy -D warnings` and `fmt --check` are clean. `router-core` is tokio-free. 69 conformance fixtures (70 conformance tests including registration). The 15 ignored tests are the e2e suite, which is `#[ignore]`d and runs with `BUZZ_E2E=1 ... -- --ignored` against the local relay via `scripts/e2e-relay.sh` (failing without `BUZZ_E2E=1` rather than passing silently). |
 | CI | `ci.yml` (fmt lint + 3-OS clippy/test/release-build + ubuntu tokio-free/openssl/bundled checks + 3-OS e2e with ubuntu required + MSRV 1.88) plus Docs Gate and `release.yml` (tag builds + publish). |
+| Reviews | Two independent council reviews done (`.squad/REVIEW.md`, `.squad/REVIEW2.md`); all findings fixed except deliberately deferred/dropped ones. |
+| Not yet verified | 3-OS GitHub CI results (CI has not run on a pushed branch yet); a real tag/`workflow_dispatch` release dry run; real Windows Task Scheduler crash-restart behaviour (manual runbook check). |
+| Open item | Finding E: a channel whose backfill fails permanently makes a bot redial forever — awaits an owner decision. |
 
 | Milestone | Tasks | Status |
 |---|---|---|
@@ -37,7 +40,7 @@ last-reviewed: 2026-10-06
 | 5. Webhook adapter | 5.1–5.2 | 2 of 2 done. |
 | 6. Packaging, CI and release | 6.1–6.4 | Done except CI-run evidence (6.3, 6.4 pending a CI run). |
 | 7. End-to-end acceptance | 7.1–7.5 | Done except CI-run evidence (7.5 pending a CI run). |
-| 8. Docs and closeout | 8.1–8.2 | 8.1 done; 8.2 open. |
+| 8. Docs and closeout | 8.1–8.2 | 8.1 done; 8.2 open (closeout status recorded 2026-10-07; archive steps pending the evidence above). |
 
 ### Decided items from the owner
 
@@ -683,7 +686,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
        2. Run `docker compose up -d postgres redis`.
        3. Run `buzz-relay` the way `just relay` does, with `.env.example` and migrations.
        4. Configure relay auth to admit the four throwaway test identities, and record the settings used.
-    2. Tests are skipped unless `BUZZ_E2E=1`.
+     2. The e2e tests are `#[ignore]`d and run with `--ignored`; without `BUZZ_E2E=1` they fail with setup instructions instead of passing silently.
   - **Test contract:**
     - *Run:* `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 cargo test -p buzz-router --test e2e_relay_io -- --ignored --test-threads=1`
     - *Behaviour:*
@@ -1327,8 +1330,14 @@ All tasks here are **[Docker + local Buzz relay]**. They are acceptance verifica
   - **Requirements:** all, R1–R66 (verification).
   - **Depends on:** every task above, and the final council approval.
   - **Agent:** `docs-dev`, assigned through the conductor.
-  - **Replacement validation:** the closeout digest `STATUS: ARCHIVED`, with the requirements verified (66 of 66) and a clean validation run.
-  - [ ] Closeout complete
+   - **Replacement validation:** the closeout digest `STATUS: ARCHIVED`, with the requirements verified (66 of 66) and a clean validation run.
+   - [ ] Closeout complete
+   - **Closeout status (2026-10-07, T8.2 — task stays open):**
+     - Tasks 1.1–8.1 landed. Two independent council reviews done; all findings fixed except deliberately deferred/dropped ones (`.squad/REVIEW.md`, `.squad/REVIEW2.md`).
+     - Full gate green locally as orchestrator-verified today: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `kyber-weave docs validate .` (0 findings); all 15 e2e tests pass with `BUZZ_E2E=1 --ignored` against the local Docker Buzz relay (`scripts/e2e-relay.sh`, `ghcr.io/block/buzz:sha-f0eb557`).
+     - NOT yet verified: 3-OS GitHub CI results (CI has not run on a pushed branch yet); a real tag/`workflow_dispatch` release dry run; real Windows Task Scheduler crash-restart behaviour (manual runbook check).
+     - Open item: finding E — a channel whose backfill fails permanently makes a bot redial forever — awaits an owner decision.
+     - Steps 3–5 (canonical-docs migration, README archive move, folder archive) are therefore NOT done; the specification stays Active and this task stays open.
 
 ## Coverage
 
