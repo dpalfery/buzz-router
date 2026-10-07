@@ -12,6 +12,8 @@
     reason = "helpers in a shared test module fail the test by panicking; clippy.toml exempts only #[test] functions"
 )]
 
+pub mod daemon;
+
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
@@ -20,7 +22,7 @@ use std::time::Duration;
 
 use buzz_router::adapter::{Adapter, AdapterEvent, WakeContext};
 use buzz_router::clock::{Clock, VirtualClock};
-use buzz_router::core::{spawn_core, ApiRequest, ApiResponse, CoreDeps, CoreHandle};
+use buzz_router::core::{spawn_core, ApiRequest, ApiResponse, CoreDeps, CoreHandle, StatusSources};
 use buzz_router::relay::{RelayError, RelayPort};
 use buzz_router::store::Store;
 use buzz_sdk::ThreadRef;
@@ -264,6 +266,8 @@ pub struct TestCoreOptions {
     pub public_url: String,
     /// Per-bot adapters built from the config, instead of `adapter` or `real_adapter`.
     pub adapters: Option<SelectAdapters>,
+    /// What the status document needs from outside the core.
+    pub status: StatusSources,
 }
 
 impl Default for TestCoreOptions {
@@ -280,6 +284,7 @@ impl Default for TestCoreOptions {
             tailnet_bind: String::new(),
             public_url: String::new(),
             adapters: None,
+            status: StatusSources::default(),
         }
     }
 }
@@ -343,6 +348,7 @@ pub fn spawn_test_core_with(options: TestCoreOptions) -> (CoreHandle, FakeRelay,
         memberships,
         adapters,
         data_dir: None,
+        status: options.status,
     });
     let _ = core_slot.set(handle.clone());
     (handle, relay, store)

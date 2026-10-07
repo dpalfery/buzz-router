@@ -124,6 +124,8 @@ struct Inner {
     cmd: mpsc::UnboundedSender<ConnCmd>,
     notify_up: Notify,
     up: AtomicBool,
+    /// Whether the current socket is authenticated; `up` is the latch, this follows reconnects.
+    connected: AtomicBool,
     attempts: AtomicU64,
     publish_timeout: Duration,
 }
@@ -180,6 +182,11 @@ impl Connection {
     pub fn attempts(&self) -> u64 {
         self.inner.attempts.load(Ordering::SeqCst)
     }
+
+    /// Whether the connection is authenticated right now (for status).
+    pub fn is_connected(&self) -> bool {
+        self.inner.connected.load(Ordering::SeqCst)
+    }
 }
 
 /// Starts the connection task for `params` and returns its handle.
@@ -189,6 +196,7 @@ pub fn spawn_connection(params: ConnParams) -> Connection {
         cmd: cmd_tx,
         notify_up: Notify::new(),
         up: AtomicBool::new(false),
+        connected: AtomicBool::new(false),
         attempts: AtomicU64::new(0),
         publish_timeout: params.publish_timeout,
     });
@@ -261,9 +269,11 @@ async fn dial_and_serve(
         }
     };
     inner.up.store(true, Ordering::SeqCst);
+    inner.connected.store(true, Ordering::SeqCst);
     inner.notify_up.notify_waiters();
     let mut pending: HashMap<String, oneshot::Sender<Result<(), RelayError>>> = HashMap::new();
     serve(&mut sink, &mut stream, cmds, &mut pending).await;
+    inner.connected.store(false, Ordering::SeqCst);
     for (_, reply) in pending {
         let _ = reply.send(Err(RelayError::Transport(
             "the relay connection closed before answering".to_string(),
@@ -491,6 +501,7 @@ pub fn spawn_synced_connection(params: SyncParams) -> Connection {
         cmd: cmd_tx,
         notify_up: Notify::new(),
         up: AtomicBool::new(false),
+        connected: AtomicBool::new(false),
         attempts: AtomicU64::new(0),
         publish_timeout: params.conn.publish_timeout,
     });
@@ -589,9 +600,11 @@ async fn dial_and_serve_synced(
         }
     };
     inner.up.store(true, Ordering::SeqCst);
+    inner.connected.store(true, Ordering::SeqCst);
     inner.notify_up.notify_waiters();
     let mut pending: HashMap<String, oneshot::Sender<Result<(), RelayError>>> = HashMap::new();
     sync_and_serve(state, &mut sink, &mut stream, cmds, &mut pending).await;
+    inner.connected.store(false, Ordering::SeqCst);
     for (_, reply) in pending {
         let _ = reply.send(Err(RelayError::Transport(
             "the relay connection closed before answering".to_string(),

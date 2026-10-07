@@ -42,21 +42,26 @@ impl WakeState {
         }
     }
 
-    fn parse(text: &str) -> Result<Self, StoreError> {
+    /// The state stored as `text`, such as `queued`.
+    pub fn from_name(text: &str) -> Option<Self> {
         match text {
-            "queued" => Ok(Self::Queued),
-            "running" => Ok(Self::Running),
-            "posted" => Ok(Self::Posted),
-            "passed" => Ok(Self::Passed),
-            "timeout" => Ok(Self::Timeout),
-            "killed" => Ok(Self::Killed),
-            "failed" => Ok(Self::Failed),
-            "interrupted" => Ok(Self::Interrupted),
-            other => Err(StoreError::Corrupt {
-                column: "wakes.state",
-                message: format!("unknown wake state {other:?}"),
-            }),
+            "queued" => Some(Self::Queued),
+            "running" => Some(Self::Running),
+            "posted" => Some(Self::Posted),
+            "passed" => Some(Self::Passed),
+            "timeout" => Some(Self::Timeout),
+            "killed" => Some(Self::Killed),
+            "failed" => Some(Self::Failed),
+            "interrupted" => Some(Self::Interrupted),
+            _ => None,
         }
+    }
+
+    fn parse(text: &str) -> Result<Self, StoreError> {
+        Self::from_name(text).ok_or_else(|| StoreError::Corrupt {
+            column: "wakes.state",
+            message: format!("unknown wake state {text:?}"),
+        })
     }
 }
 
@@ -261,6 +266,25 @@ impl<'c> Wakes<'c> {
         ))?;
         let raw = statement
             .query_map([state.as_str()], RawWake::from_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        raw.into_iter().map(RawWake::into_row).collect()
+    }
+
+    /// Every wake, or only `bot`'s, or only those in `state`, oldest first.
+    pub fn list(
+        &self,
+        bot: Option<&BotName>,
+        state: Option<WakeState>,
+    ) -> Result<Vec<WakeRow>, StoreError> {
+        let mut statement = self.conn.prepare(&format!(
+            "SELECT {COLUMNS} FROM wakes WHERE (?1 IS NULL OR bot = ?1) AND (?2 IS NULL OR state = ?2) \
+             ORDER BY created_at, id"
+        ))?;
+        let raw = statement
+            .query_map(
+                params![bot.map(BotName::as_str), state.map(WakeState::as_str)],
+                RawWake::from_row,
+            )?
             .collect::<Result<Vec<_>, _>>()?;
         raw.into_iter().map(RawWake::into_row).collect()
     }

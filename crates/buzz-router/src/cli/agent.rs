@@ -131,6 +131,26 @@ pub(super) fn call(
     body: Option<Value>,
     timeout: Duration,
 ) -> Result<Value, CallError> {
+    let bytes = request(reqwest::Method::POST, base_url, path, bearer, body, timeout)?;
+    Ok(if bytes.is_empty() {
+        json!({})
+    } else {
+        serde_json::from_slice(&bytes).unwrap_or_else(
+            |_| json!({ "error": "error", "message": String::from_utf8_lossy(&bytes) }),
+        )
+    })
+}
+
+/// `<method> <base_url><path>` with `Authorization: Bearer <bearer>` and an optional JSON body,
+/// within `timeout`. Returns the raw body of a 2xx.
+pub(super) fn request(
+    method: reqwest::Method,
+    base_url: &str,
+    path: &str,
+    bearer: &str,
+    body: Option<Value>,
+    timeout: Duration,
+) -> Result<Vec<u8>, CallError> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -141,7 +161,7 @@ pub(super) fn call(
             .build()
             .map_err(|error| CallError::Other(format!("cannot build the HTTP client: {error}")))?;
         let url = format!("{}{path}", base_url.trim_end_matches('/'));
-        let mut request = client.post(&url).bearer_auth(bearer);
+        let mut request = client.request(method, &url).bearer_auth(bearer);
         if let Some(body) = body {
             request = request.json(&body);
         }
@@ -160,6 +180,9 @@ pub(super) fn call(
                 CallError::Other(format!("cannot read the answer: {error}"))
             }
         })?;
+        if status.is_success() {
+            return Ok(bytes.to_vec());
+        }
         let answer: Value = if bytes.is_empty() {
             json!({})
         } else {
@@ -167,9 +190,6 @@ pub(super) fn call(
                 |_| json!({ "error": "error", "message": String::from_utf8_lossy(&bytes) }),
             )
         };
-        if status.is_success() {
-            return Ok(answer);
-        }
         let field = |name: &str| {
             answer
                 .get(name)

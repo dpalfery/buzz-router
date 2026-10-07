@@ -15,7 +15,7 @@ use serde_json::{json, Value};
 use subtle::ConstantTimeEq;
 
 use super::{bearer, body_bytes, ApiState, HttpError};
-use crate::core::{ApiRequest, ApiResponse};
+use crate::core::{ApiRequest, ApiResponse, Status};
 
 /// The optional body of the control routes.
 #[derive(Deserialize, Default)]
@@ -28,9 +28,9 @@ struct BotsBody {
 pub(super) async fn status(
     State(state): State<ApiState>,
     headers: HeaderMap,
-) -> Result<Json<Value>, HttpError> {
+) -> Result<Json<Status>, HttpError> {
     authorize(&state, &headers)?;
-    Err(HttpError::not_implemented())
+    Ok(Json(state.core.status().await?))
 }
 
 /// `POST /v1/stop {bots?}`.

@@ -4,8 +4,7 @@
 //! handler returns `Result<(), CliError>`. On `Err`, `main` writes one JSON line to stderr, nothing
 //! to stdout, and exits with the code of the error's kind.
 //!
-//! Only `run`, `roster check`, `route --replay`, `capture`, `keys`, `service`, `post`, `pass`, `eta`, `stop`, `resume` and `cancel` are built so far. The other commands are in the tree,
-//! with their flags, and fail with `CliError::other("not implemented")` until their tasks.
+//! Every command of design 12.1 is built.
 
 mod agent;
 mod capture;
@@ -15,6 +14,8 @@ mod replay;
 mod roster;
 mod run;
 mod service;
+mod status;
+mod wakes;
 
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -138,11 +139,6 @@ impl CliError {
             )
         })
     }
-}
-
-/// The error of a command whose task has not been built yet.
-fn not_implemented() -> CliError {
-    CliError::other("not implemented")
 }
 
 /// The error for a failed write to standard output.
@@ -396,7 +392,8 @@ fn dispatch(command: Command, dirs: &Dirs) -> Result<(), CliError> {
         Command::Resume(args) => control::run(dirs, control::Action::Resume, &args.bots),
         Command::Cancel(args) => control::run(dirs, control::Action::Cancel, &args.bots),
         Command::Run => run::run(dirs),
-        Command::Status(_) | Command::Wakes(_) => Err(not_implemented()),
+        Command::Status(args) => status::run(dirs, args.json),
+        Command::Wakes(args) => wakes::run(dirs, args.bot.as_deref(), args.state.as_deref()),
     }
 }
 

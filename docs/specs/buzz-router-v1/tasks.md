@@ -1013,7 +1013,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
   - [x] GREEN
   - [x] REFACTOR
 
-- [ ] **4.3 `status` and `wakes`**
+- [x] **4.3 `status` and `wakes`**
   - **Objective:** Implement the status document (§12.2) behind `GET /v1/status` and `status [--json]`, and `wakes`, which reads SQLite directly.
   - **Files:** `crates/buzz-router/src/core/status.rs`, status in `src/api/admin.rs`, `src/cli/{status.rs,wakes.rs}`, and `crates/buzz-router/tests/{api_status.rs,cli_status.rs,cli_wakes.rs}`.
   - **Design:** §12.1, §12.2, DD-12.
@@ -1029,9 +1029,10 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - With the daemon down, `status` gives exit 2, `network_error`, and `wakes --bot A --state queued` still lists rows from SQLite.
     - *RED:* the commands and route return "not implemented" or 501.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - **Done:** T4.3 commit. RED: `GET /v1/status` answered 501, and `status` and `wakes` exited 4 with "not implemented". `cargo test -p buzz-router --test api_status --test cli_status --test cli_wakes`: 9 passed. `bots` lists every bot in `router.toml`, unavailable ones included. `connected` means the bot's relay socket is authenticated right now. `wakes` prints one JSON line per row, oldest first, without the token hash. With no database it prints nothing. The interim not-yet-built rows of `cli_errors.rs` are gone.
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 - [x] **4.4 Logging: file output, rate limiting and redaction**
   - **Objective:** Complete `logging.rs`: the JSON file layer with daily rotation keeping 14 files, `BUZZ_ROUTER_LOG`, `LogLimiter`, and redaction of secrets.

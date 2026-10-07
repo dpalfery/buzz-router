@@ -24,21 +24,12 @@
 //!   or invalid input files give `BadInput`"), a missing roster, an invalid `router.toml`, a missing
 //!   or invalid roster or a missing events file given to `route --replay`; and, by D4, every clap
 //!   usage error (a missing or unknown subcommand, an unknown flag);
-//! - `Other`, exit 4, `error`, `retryable` false: every command that is not built yet returns
-//!   `CliError::other("not implemented")`
-//!   (`commands_not_yet_built_return_not_implemented_with_exit_four`).
 //!
-//! **What it does not reach, and why.** `Network` (2) and `Auth` (3) need a command that talks to a
-//! daemon or a relay, and none exists before tasks 3.9 and 3.10, whose tests assert them through
-//! the binary. Their rows, with every other row, are pinned by the unit tests in
-//! `src/cli/mod.rs` (`cargo test -p buzz-router --lib cli::tests`).
-//!
-//! **Interim rows.** `NOT_YET_BUILT` lists each command that is not built yet, once, with the
-//! flags design 12.1 gives it. Each later task that builds a command must delete that command's row
-//! when it writes its own tests; the row would otherwise fail, or, for a command with side effects,
-//! run it. `run`, `service install` and `service uninstall` have no row for that reason: once
-//! built they would start a daemon or change the operating system's services. Their presence is
-//! covered by `cli_surface.rs`.
+//! **What it does not reach, and why.** `Network` (2), `Auth` (3) and `Other` (4) need a command
+//! that talks to a daemon or a relay; the tests of tasks 3.9, 3.10 and 4.3 assert them through the
+//! binary. Every row is pinned by the unit tests in `src/cli/mod.rs`
+//! (`cargo test -p buzz-router --lib cli::tests`). The interim not-yet-built rows of task 1.11
+//! were deleted as their commands were built; the last went with task 4.3.
 //!
 //! **Not tested here.** `capture --since 7x`: the `capture` command validates the duration itself
 //! (task 2.8), and `cli_capture.rs` asserts its exit 1.
@@ -93,13 +84,6 @@ respond_to = "owner-only"
 /// A `router.toml` that is not TOML.
 const INVALID_ROUTER_TOML: &str = "roster_path = = \"other.toml\"\n[[[\n";
 
-/// The commands that are not built yet, each once, with its flags (design 12.1). See the module
-/// documentation: a later task deletes its commands' rows.
-const NOT_YET_BUILT: [&[&str]; 2] = [
-    &["status", "--json"],
-    &["wakes", "--bot", "A", "--state", "queued"],
-];
-
 /// The error line a failing command must print (decisions D1 and D4).
 struct Failure<'a> {
     /// The process exit code of the error's kind.
@@ -118,14 +102,6 @@ const BAD_INPUT: Failure<'static> = Failure {
     category: "user_error",
     retryable: false,
     message: None,
-};
-
-/// `ErrorKind::Other` for a command that is not built yet: exit 4, `error`, not retryable.
-const NOT_IMPLEMENTED: Failure<'static> = Failure {
-    exit_code: 4,
-    category: "error",
-    retryable: false,
-    message: Some("not implemented"),
 };
 
 /// Temporary directories for one test: a config dir, a data dir, a home dir and a directory for
@@ -284,23 +260,6 @@ fn bad_input_exits_one_with_a_user_error_line_of_the_documented_shape() {
     let output = sandbox.run(&["roster", "check"]);
 
     assert_reports(&output, &BAD_INPUT);
-}
-
-#[test]
-fn commands_not_yet_built_return_not_implemented_with_exit_four() {
-    let sandbox = Sandbox::new();
-
-    let problems: Vec<String> = NOT_YET_BUILT
-        .iter()
-        .flat_map(|args| {
-            let output = sandbox.run(args);
-            error_report_problems(&output, &NOT_IMPLEMENTED)
-                .into_iter()
-                .map(move |problem| format!("`buzz-router {}`: {problem}", args.join(" ")))
-        })
-        .collect();
-
-    assert!(problems.is_empty(), "{}", problems.join("\n"));
 }
 
 #[test]

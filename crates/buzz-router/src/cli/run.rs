@@ -14,7 +14,9 @@ use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-use router_core::config::{parse_router, KeySource as ConfigKeySource, Roster, RouterConfig};
+use router_core::config::{
+    parse_router, roster_hash, KeySource as ConfigKeySource, Roster, RouterConfig,
+};
 use router_core::ids::{BotName, Pubkey};
 use tokio::sync::mpsc;
 
@@ -22,7 +24,9 @@ use super::roster::{load as load_roster, roster_path};
 use super::CliError;
 use crate::api::{admin_token, loopback_router, tailnet_router, ApiState};
 use crate::clock::SystemClock;
-use crate::core::{select_adapters, spawn_core, CoreDeps, CoreHandle};
+use crate::core::{
+    select_adapters, spawn_core, ConnectedProbe, CoreDeps, CoreHandle, StatusSources,
+};
 use crate::keys::{load_key, use_native_store, KeySource};
 use crate::logging;
 use crate::paths::Dirs;
@@ -48,29 +52,46 @@ pub(super) fn run(dirs: &Dirs) -> Result<(), CliError> {
             None
         }
     };
-    let (roster, config) = load_config(dirs)?;
+    let loaded = load_config(dirs)?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .map_err(|error| CliError::other(format!("cannot start the async runtime: {error}")))?;
-    let result = runtime.block_on(serve(dirs, roster, config));
+    let result = runtime.block_on(serve(dirs, loaded));
     runtime.shutdown_timeout(SHUTDOWN_GRACE);
     result
 }
 
+/// The validated configuration.
+struct Loaded {
+    roster: Roster,
+    /// The hex SHA-256 of the roster file, as `roster check` prints it.
+    roster_hash: String,
+    config: RouterConfig,
+}
+
 /// Loads and validates the roster and `router.toml` (design 6.2 step 2).
-fn load_config(dirs: &Dirs) -> Result<(Roster, RouterConfig), CliError> {
-    let (roster, _) = load_roster(&roster_path(&dirs.config_dir)?)?;
+fn load_config(dirs: &Dirs) -> Result<Loaded, CliError> {
+    let (roster, roster_text) = load_roster(&roster_path(&dirs.config_dir)?)?;
     let path = dirs.config_dir.join(ROUTER_TOML);
     let text = fs::read_to_string(&path)
         .map_err(|error| CliError::bad_input(format!("cannot read {}: {error}", path.display())))?;
     let config = parse_router(&text, &roster)
         .map_err(|errors| CliError::bad_input(format!("invalid {}: {errors}", path.display())))?;
-    Ok((roster, config))
+    Ok(Loaded {
+        roster,
+        roster_hash: roster_hash(roster_text.as_bytes()),
+        config,
+    })
 }
 
 /// Design 6.2 steps 3, 4 and 7, then waits for the shutdown signal.
-async fn serve(dirs: &Dirs, roster: Roster, config: RouterConfig) -> Result<(), CliError> {
+async fn serve(dirs: &Dirs, loaded: Loaded) -> Result<(), CliError> {
+    let Loaded {
+        roster,
+        roster_hash,
+        config,
+    } = loaded;
     fs::create_dir_all(&dirs.data_dir).map_err(|error| {
         CliError::other(format!(
             "cannot create the data directory {}: {error}",
@@ -123,6 +144,25 @@ async fn serve(dirs: &Dirs, roster: Roster, config: RouterConfig) -> Result<(), 
         memberships: BTreeMap::new(),
         adapters: select_adapters(&served, &dirs.data_dir, &http),
         data_dir: Some(dirs.data_dir.clone()),
+        status: StatusSources {
+            roster_hash,
+            unavailable: config
+                .bots
+                .keys()
+                .filter(|name| !served.bots.contains_key(*name))
+                .cloned()
+                .collect(),
+            connected: relays
+                .iter()
+                .map(|(name, relay)| {
+                    let relay = relay.clone();
+                    let probe: ConnectedProbe = Arc::new(move || {
+                        relay.connection.get().is_some_and(Connection::is_connected)
+                    });
+                    (name.clone(), probe)
+                })
+                .collect(),
+        },
     });
 
     let state = ApiState::new(core.clone(), token, &roster);

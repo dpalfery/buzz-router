@@ -33,6 +33,7 @@ use uuid::Uuid;
 use super::control::write_halts;
 use super::dispatch::{RunningWake, TriggerCache};
 use super::queue::{enqueue, Debounce, Trigger};
+use super::status::StatusSources;
 use super::{CoreMsg, DebugCounters, MissedMessage};
 use crate::adapter::Adapter;
 use crate::clock::Clock;
@@ -128,7 +129,8 @@ pub(super) struct Core {
     pub(super) channel_names: HashMap<ChannelId, String>,
     pub(super) adapters: BTreeMap<BotName, Arc<dyn Adapter>>,
     pub(super) threads: ThreadCache,
-    counters: DebugCounters,
+    pub(super) counters: DebugCounters,
+    pub(super) status_sources: StatusSources,
     drift_logged: HashSet<Pubkey>,
     /// When each bot last warned about an unmanaged post, in unix milliseconds (R51.2).
     unmanaged_warned_at: HashMap<BotName, i64>,
@@ -151,6 +153,7 @@ pub(super) struct CoreParts {
     pub keys: BTreeMap<BotName, nostr::Keys>,
     pub memberships: BTreeMap<BotName, BTreeSet<ChannelId>>,
     pub adapters: BTreeMap<BotName, Arc<dyn Adapter>>,
+    pub status_sources: StatusSources,
 }
 
 impl Core {
@@ -169,6 +172,7 @@ impl Core {
             adapters: parts.adapters,
             threads: ThreadCache::default(),
             counters: DebugCounters::default(),
+            status_sources: parts.status_sources,
             drift_logged: HashSet::new(),
             unmanaged_warned_at: HashMap::new(),
             publishes: JoinSet::new(),
@@ -207,6 +211,10 @@ impl Core {
             }
             CoreMsg::DebugCounters(reply) => {
                 let _ = reply.send(self.counters.clone());
+                return;
+            }
+            CoreMsg::Status(reply) => {
+                let _ = reply.send(self.status().map_err(|error| error.to_string()));
                 return;
             }
             CoreMsg::Shutdown => return,

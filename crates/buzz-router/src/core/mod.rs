@@ -9,12 +9,14 @@
 //!   or a 1-second tick, so wall-clock deadlines are re-checked after an OS sleep. After each
 //!   message or timer it fires the running wakes' timers and runs the scheduler ([`queue`]).
 //!
-//! [`CoreHandle`] is the only way in. Its `flush` and `debug_counters` exist for tests.
+//! [`CoreHandle`] is the only way in. Its `flush` and `debug_counters` exist for tests; `status`
+//! builds the status document ([`status`]).
 
 mod apply;
 pub mod control;
 mod dispatch;
 pub mod queue;
+mod status;
 mod timers;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -38,6 +40,9 @@ use dispatch::Purpose;
 
 pub use apply::wake_counts;
 pub use dispatch::{select_adapters, ApiFailure, ApiRequest, ApiResponse};
+pub use status::{
+    BotStatus, BudgetStatus, BudgetUse, ConnectedProbe, MissedStatus, Status, StatusSources,
+};
 
 /// The longest the core actor sleeps between loop turns.
 const TICK: Duration = Duration::from_secs(1);
@@ -64,6 +69,8 @@ pub struct CoreDeps {
     pub adapters: BTreeMap<BotName, Arc<dyn Adapter>>,
     /// The data directory holding the wakes' scratch directories, which recovery deletes.
     pub data_dir: Option<PathBuf>,
+    /// What the status document needs from outside the core.
+    pub status: StatusSources,
 }
 
 /// A backfilled owner message too old to wake anyone (design 6.2 step 8, DD-14).
@@ -121,6 +128,8 @@ pub(crate) enum CoreMsg {
     Flush(oneshot::Sender<()>),
     /// Reply with the counters (tests only).
     DebugCounters(oneshot::Sender<DebugCounters>),
+    /// Reply with the status document, or why it couldn't be built.
+    Status(oneshot::Sender<Result<Status, String>>),
     /// Stop the actor.
     Shutdown,
 }
@@ -194,6 +203,18 @@ impl CoreHandle {
         rx.await.unwrap_or_default()
     }
 
+    /// The status document (design 12.2).
+    pub async fn status(&self) -> Result<Status, ApiFailure> {
+        let stopped = || ApiFailure::Internal("the core has stopped".to_owned());
+        let (tx, rx) = oneshot::channel();
+        self.core_tx
+            .send(CoreMsg::Status(tx))
+            .map_err(|_| stopped())?;
+        rx.await
+            .map_err(|_| stopped())?
+            .map_err(ApiFailure::Internal)
+    }
+
     /// Stops the core actor.
     pub fn shutdown(&self) {
         let _ = self.core_tx.send(CoreMsg::Shutdown);
@@ -216,6 +237,7 @@ pub fn spawn_core(deps: CoreDeps) -> CoreHandle {
             keys: deps.keys,
             memberships: deps.memberships,
             adapters: deps.adapters,
+            status_sources: deps.status,
         },
         core_tx.clone(),
     );
