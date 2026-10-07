@@ -1,0 +1,116 @@
+//! Task 3.8: a stop kills a real agent's whole process tree (design 6.7 and 7.1, R37.1, R65.4).
+//!
+//! Real processes and real time: the command adapter runs `buzz-router-test-agent
+//! spawn-grandchild <pidfile>`, which writes its own pid and its child's.
+
+#![allow(
+    clippy::unwrap_used,
+    reason = "helpers in a test file fail the test by panicking; clippy.toml exempts only #[test] functions"
+)]
+
+mod support;
+
+use std::path::Path;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use buzz_router::adapter::command::CommandAdapter;
+use buzz_router::core::{ApiFailure, ApiRequest, ApiResponse};
+use buzz_router::ingest::Source;
+use buzz_router::store::wakes::WakeState;
+use router_core::ids::BotName;
+use support::{
+    base_secs, channel, keys, pid_alive, spawn_test_core_with, test_agent_path, top_level,
+    TestCoreOptions,
+};
+
+fn adapter_toml(pidfile: &Path, cwd: &Path) -> String {
+    format!(
+        "type = \"command\"\ncommand = ['{}', 'spawn-grandchild', '{}']\ncwd = '{}'\nenv = {{}}\nprompt_mode = \"stdin\"\nreply_mode = \"api\"\nprompt_template = \"\"\n",
+        test_agent_path().display(),
+        pidfile.display(),
+        cwd.display()
+    )
+}
+
+/// Polls `probe` every 20 ms until it returns a value, for at most `limit`.
+async fn within<T>(limit: Duration, what: &str, mut probe: impl FnMut() -> Option<T>) -> T {
+    let started = Instant::now();
+    loop {
+        if let Some(value) = probe() {
+            return value;
+        }
+        assert!(started.elapsed() < limit, "timed out: {what}");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stop_kills_the_agent_and_its_grandchild_and_later_posts_get_423() {
+    let dir = tempfile::tempdir().unwrap();
+    let data_dir = dir.path().join("data");
+    let pidfile = dir.path().join("pids");
+    let adapter = CommandAdapter::new(data_dir.clone(), "http://127.0.0.1:9".to_owned());
+    let (core, relay, store) = spawn_test_core_with(TestCoreOptions {
+        adapter_toml: adapter_toml(&pidfile, dir.path()),
+        real_adapter: Some(Arc::new(adapter)),
+        ..TestCoreOptions::default()
+    });
+
+    core.ingest(
+        BotName::new("A").unwrap(),
+        top_level(&keys("owner"), channel(), "@A work", base_secs()),
+        Source::Live,
+    );
+    let pids: Vec<u32> = within(Duration::from_secs(30), "the pid file", || {
+        let text = std::fs::read_to_string(&pidfile).ok()?;
+        let pids: Vec<u32> = text.lines().filter_map(|line| line.parse().ok()).collect();
+        (pids.len() == 2).then_some(pids)
+    })
+    .await;
+    assert!(pids.iter().all(|pid| pid_alive(*pid)), "{pids:?}");
+    let wake_id: String = store
+        .connection()
+        .query_row("SELECT id FROM wakes WHERE state = 'running'", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    let payload: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(data_dir.join("wakes").join(&wake_id).join("payload.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    let token = payload["token"].as_str().unwrap().to_owned();
+    assert_eq!(
+        std::fs::read_to_string(data_dir.join("wakes").join(&wake_id).join("pid"))
+            .unwrap()
+            .trim(),
+        pids[0].to_string()
+    );
+
+    core.ingest(
+        BotName::new("A").unwrap(),
+        top_level(&keys("owner"), channel(), "stop", base_secs() + 1),
+        Source::Live,
+    );
+    core.flush().await;
+
+    within(Duration::from_secs(5), "both processes to die", || {
+        pids.iter().all(|pid| !pid_alive(*pid)).then_some(())
+    })
+    .await;
+    let wake = store
+        .wakes()
+        .get(&uuid::Uuid::parse_str(&wake_id).unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(wake.state, WakeState::Killed);
+    let response = core
+        .api(ApiRequest::Post {
+            token,
+            text: "after the stop".to_owned(),
+        })
+        .await;
+    assert_eq!(response, ApiResponse::Failed(ApiFailure::Halted));
+    assert!(relay.messages("reply").is_empty());
+}

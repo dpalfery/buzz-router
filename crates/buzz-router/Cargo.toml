@@ -83,6 +83,10 @@ hmac = { workspace = true }
 axum = { workspace = true }
 subtle = { workspace = true }
 
+# The CLI stop fallback (task 3.8): killing a wake's process group.
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true }
+
 [dev-dependencies]
 sha2 = { workspace = true }
 hex = { workspace = true }

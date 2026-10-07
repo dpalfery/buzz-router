@@ -4,11 +4,12 @@
 //! handler returns `Result<(), CliError>`. On `Err`, `main` writes one JSON line to stderr, nothing
 //! to stdout, and exits with the code of the error's kind.
 //!
-//! Only `roster check`, `route --replay`, `capture`, `keys`, `service`, `post`, `pass` and `eta` are built so far. The other commands are in the tree,
+//! Only `roster check`, `route --replay`, `capture`, `keys`, `service`, `post`, `pass`, `eta`, `stop`, `resume` and `cancel` are built so far. The other commands are in the tree,
 //! with their flags, and fail with `CliError::other("not implemented")` until their tasks.
 
 mod agent;
 mod capture;
+mod control;
 pub mod keys;
 mod replay;
 mod roster;
@@ -387,12 +388,10 @@ fn dispatch(command: Command, dirs: &Dirs) -> Result<(), CliError> {
         Command::Post(args) => agent::post(args.text, args.text_file.as_deref()),
         Command::Pass => agent::pass(),
         Command::Eta(args) => agent::eta(args.text),
-        Command::Run
-        | Command::Status(_)
-        | Command::Stop(_)
-        | Command::Resume(_)
-        | Command::Cancel(_)
-        | Command::Wakes(_) => Err(not_implemented()),
+        Command::Stop(args) => control::run(dirs, control::Action::Stop, &args.bots),
+        Command::Resume(args) => control::run(dirs, control::Action::Resume, &args.bots),
+        Command::Cancel(args) => control::run(dirs, control::Action::Cancel, &args.bots),
+        Command::Run | Command::Status(_) | Command::Wakes(_) => Err(not_implemented()),
     }
 }
 

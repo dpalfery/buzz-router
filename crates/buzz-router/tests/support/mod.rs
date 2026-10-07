@@ -204,6 +204,26 @@ pub fn test_agent_path() -> std::path::PathBuf {
         .clone()
 }
 
+/// Whether a process with `pid` exists. On Unix a zombie counts as alive, so reap your own
+/// children before asking.
+pub fn pid_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        let Ok(pid) = i32::try_from(pid) else {
+            return false;
+        };
+        nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).is_ok()
+    }
+    #[cfg(windows)]
+    {
+        let output = std::process::Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&output.stdout).contains(&format!("\"{pid}\""))
+    }
+}
+
 /// Writes to the database before a test core starts.
 pub type Seed = Box<dyn FnOnce(&Store)>;
 

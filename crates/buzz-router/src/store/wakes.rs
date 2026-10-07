@@ -245,6 +245,17 @@ impl<'c> Wakes<'c> {
         raw.into_iter().map(RawWake::into_row).collect()
     }
 
+    /// Every wake in `state`, oldest first.
+    pub fn with_state(&self, state: WakeState) -> Result<Vec<WakeRow>, StoreError> {
+        let mut statement = self.conn.prepare(&format!(
+            "SELECT {COLUMNS} FROM wakes WHERE state = ?1 ORDER BY created_at, id"
+        ))?;
+        let raw = statement
+            .query_map([state.as_str()], RawWake::from_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        raw.into_iter().map(RawWake::into_row).collect()
+    }
+
     /// The earliest `dispatch_after` of a queued wake that is later than `after_ms`.
     pub fn next_dispatch_after(&self, after_ms: i64) -> Result<Option<i64>, StoreError> {
         Ok(self.conn.query_row(

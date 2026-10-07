@@ -890,7 +890,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
   - [x] GREEN
   - [x] REFACTOR
 
-- [ ] **3.8 Stop end to end with real processes; CLI control and fallback**
+- [x] **3.8 Stop end to end with real processes; CLI control and fallback**
   - **Objective:** Prove the real process-group kill on all three OSes. Implement `stop`, `resume` and `cancel` on the CLI, with the stop fallback when the API is unreachable.
   - **Files:** `crates/buzz-router/src/cli/control.rs`, and `crates/buzz-router/tests/{engine_stop_kill.rs,cli_control.rs,cli_stop_fallback.rs}`.
   - **Design:** §6.7 (CLI fallback), §7.1, §16.2.
@@ -906,9 +906,9 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - **CLI fallback:** with no daemon, a seeded `running` wake and a real test-agent process tree whose pid is in `wakes/<id>/pid`, `stop --bot A` writes the halt row `'A'` with `set_by_event = "cli"`, kills the tree, and exits 0.
     - *RED:* the CLI control commands return "not implemented"; the kill test fails because the pid file isn't written yet, or because the processes survive.
     - *GREEN:* passes on all three OSes in CI.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 - [x] **3.9 Agent CLI: `post`, `pass`, `eta`**
   - **Objective:** Implement the agent-side commands that call the wake-token API.

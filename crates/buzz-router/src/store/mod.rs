@@ -23,6 +23,9 @@ use posts::Posts;
 use threads::{Threads, Turns};
 use wakes::Wakes;
 
+/// The database file name in the data directory (design section 9.1).
+pub const FILE_NAME: &str = "state.sqlite3";
+
 /// A store failure.
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
