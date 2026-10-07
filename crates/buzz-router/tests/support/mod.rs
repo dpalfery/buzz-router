@@ -27,7 +27,7 @@ use buzz_sdk::ThreadRef;
 use chrono::{DateTime, TimeZone, Utc};
 use futures_util::future::BoxFuture;
 use nostr::{Event, EventBuilder, Filter, Keys, Kind, SecretKey, Tag, Timestamp};
-use router_core::config::{parse_roster, parse_router};
+use router_core::config::{parse_roster, parse_router, RouterConfig};
 use router_core::ids::EventId;
 use router_core::ids::{BotName, ChannelId};
 use router_core::payload::WakePayload;
@@ -171,8 +171,18 @@ pub fn router_toml(max_concurrent: u32) -> String {
 
 /// [`router_toml`] with `adapter` as every bot's `[bots.adapter]` table body.
 pub fn router_toml_with(max_concurrent: u32, adapter: &str) -> String {
+    router_toml_full(max_concurrent, adapter, "", "")
+}
+
+/// [`router_toml_with`] with `tailnet_bind` and `public_url` set.
+pub fn router_toml_full(
+    max_concurrent: u32,
+    adapter: &str,
+    tailnet_bind: &str,
+    public_url: &str,
+) -> String {
     let mut router = format!(
-        "relay_url = \"{RELAY_URL}\"\napi_bind = \"127.0.0.1:47821\"\ntailnet_bind = \"\"\npublic_url = \"\"\nroster_path = \"roster.toml\"\n"
+        "relay_url = \"{RELAY_URL}\"\napi_bind = \"127.0.0.1:47821\"\ntailnet_bind = \"{tailnet_bind}\"\npublic_url = \"{public_url}\"\nroster_path = \"roster.toml\"\n"
     );
     for name in BOTS {
         router.push_str(&format!(
@@ -227,6 +237,9 @@ pub fn pid_alive(pid: u32) -> bool {
 /// Writes to the database before a test core starts.
 pub type Seed = Box<dyn FnOnce(&Store)>;
 
+/// Builds every bot's adapter from the parsed router configuration.
+pub type SelectAdapters = Box<dyn FnOnce(&RouterConfig) -> BTreeMap<BotName, Arc<dyn Adapter>>>;
+
 /// How to build a test core.
 pub struct TestCoreOptions {
     /// The `[limits]` table of the roster.
@@ -245,6 +258,12 @@ pub struct TestCoreOptions {
     pub real_adapter: Option<Arc<dyn Adapter>>,
     /// The database file, instead of a fresh temporary one.
     pub db_path: Option<std::path::PathBuf>,
+    /// `tailnet_bind` in `router.toml`.
+    pub tailnet_bind: String,
+    /// `public_url` in `router.toml`.
+    pub public_url: String,
+    /// Per-bot adapters built from the config, instead of `adapter` or `real_adapter`.
+    pub adapters: Option<SelectAdapters>,
 }
 
 impl Default for TestCoreOptions {
@@ -258,6 +277,9 @@ impl Default for TestCoreOptions {
             adapter_toml: DEFAULT_ADAPTER_TOML.to_owned(),
             real_adapter: None,
             db_path: None,
+            tailnet_bind: String::new(),
+            public_url: String::new(),
+            adapters: None,
         }
     }
 }
@@ -280,10 +302,16 @@ pub fn spawn_test_core_with(options: TestCoreOptions) -> (CoreHandle, FakeRelay,
     }
     let roster = parse_roster(&roster_toml_with(&options.limits, &options.roster_extra)).unwrap();
     let config = parse_router(
-        &router_toml_with(options.max_concurrent, &options.adapter_toml),
+        &router_toml_full(
+            options.max_concurrent,
+            &options.adapter_toml,
+            &options.tailnet_bind,
+            &options.public_url,
+        ),
         &roster,
     )
     .unwrap();
+    let mut selected = options.adapters.map(|select| select(&config));
     let clock: Arc<dyn Clock> = Arc::new(VirtualClock::new(base_time()));
     let fake = options.adapter.with_clock(clock.clone());
     let core_slot = fake.core.clone();
@@ -297,7 +325,11 @@ pub fn spawn_test_core_with(options: TestCoreOptions) -> (CoreHandle, FakeRelay,
         let bot = BotName::new(name).unwrap();
         relays.insert(bot.clone(), Arc::new(relay.clone()));
         keys_by_bot.insert(bot.clone(), keys(name));
-        adapters.insert(bot.clone(), adapter.clone());
+        let chosen = selected
+            .as_mut()
+            .and_then(|selected| selected.remove(&bot))
+            .unwrap_or_else(|| adapter.clone());
+        adapters.insert(bot.clone(), chosen);
         memberships.insert(bot, BTreeSet::from([ChannelId::from(channel())]));
     }
     let handle = spawn_core(CoreDeps {

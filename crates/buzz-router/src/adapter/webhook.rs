@@ -209,6 +209,12 @@ impl Adapter for WebhookAdapter {
             }
         })
     }
+
+    fn killed(&self, config: &AdapterConfig, wake_id: Uuid) -> BoxFuture<'static, ()> {
+        let adapter = self.clone();
+        let config = config.clone();
+        Box::pin(async move { adapter.cancel(&config, wake_id).await })
+    }
 }
 
 /// `sha256=<hex HMAC-SHA256(secret, body)>`.

@@ -1096,9 +1096,11 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
     - *Behaviour (sync):* a sync text reply is published under the reaction target. A sync wake that hits its deadline gives `timeout` and ⌛.
     - *RED:* webhook bots aren't dispatched to `WebhookAdapter`.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - **Clarifications (owner-approved):** a stop or cancel that kills a running webhook wake, from a Buzz message or the admin API, calls `cancel_url` in the background, in async and sync mode alike (`Adapter::killed`). A deadline timeout does not call it (§6.6 only cancels the HTTP call and revokes the token). Any cancellation of a sync wake drops the in-flight request, and a sync reply arriving after a halt is discarded. The CLI stop fallback never calls `cancel_url`: without the daemon there is no wake state.
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** T5.2 commit. RED was `error[E0432]` unresolved `buzz_router::core::select_adapters`. `cargo test -p buzz-router --test engine_webhook`: 6 passed. Full workspace gate green.
 
 ## Milestone 6: packaging, CI and release (brief §17.6)
 

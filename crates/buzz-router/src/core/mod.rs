@@ -35,7 +35,7 @@ use crate::store::Store;
 use dispatch::Purpose;
 
 pub use apply::wake_counts;
-pub use dispatch::{ApiFailure, ApiRequest, ApiResponse};
+pub use dispatch::{select_adapters, ApiFailure, ApiRequest, ApiResponse};
 
 /// The longest the core actor sleeps between loop turns.
 const TICK: Duration = Duration::from_secs(1);

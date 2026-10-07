@@ -86,4 +86,11 @@ pub trait Adapter: Send + Sync {
         payload: WakePayload,
         cancel: CancellationToken,
     ) -> BoxFuture<'static, AdapterEvent>;
+
+    /// Tells the agent, best-effort, that a stop or cancel killed wake `wake_id`, which ran with
+    /// `config`. Called after the run is cancelled; a deadline does not call it.
+    fn killed(&self, config: &AdapterConfig, wake_id: Uuid) -> BoxFuture<'static, ()> {
+        let _ = (config, wake_id);
+        Box::pin(async {})
+    }
 }

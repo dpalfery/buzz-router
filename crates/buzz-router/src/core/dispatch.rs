@@ -7,14 +7,15 @@
 //! the precedence killed, timeout, posted, passed, failed, and the reaction the endings table
 //! gives it.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, TimeDelta, Utc};
 use nostr::{Filter, Kind};
 use router_core::classify::classify;
-use router_core::config::{AdapterConfig, ReplyMode, Roster};
+use router_core::config::{AdapterConfig, ReplyMode, Roster, RouterConfig, WebhookMode};
 use router_core::ids::{BotName, ChannelId, EventId};
 use router_core::payload::{
     format_deadline, turns_left_after_this, ApiRef, ChannelRef, ContextMessage, WakePayload,
@@ -30,6 +31,8 @@ use super::apply::{author_name, event_class, in_event, Core};
 use super::queue::{decode, top_trigger, Trigger};
 use super::timers::WakeTimers;
 use super::CoreMsg;
+use crate::adapter::command::CommandAdapter;
+use crate::adapter::webhook::WebhookAdapter;
 use crate::adapter::{Adapter, AdapterEvent, SyncReply, WakeContext};
 use crate::publish::{build_reply, build_status_note, build_typing};
 use crate::relay::RelayPort;
@@ -143,12 +146,40 @@ pub(super) struct RunningWake {
     pub owner_direct: bool,
     /// A command adapter in api reply mode: a pass ends the wake (DD-20).
     pub api_reply_mode: bool,
+    /// An async webhook: the first post or a pass ends the wake (A6).
+    pub async_webhook: bool,
     pub posts: u32,
     pub posted: Vec<String>,
     pub passed: bool,
     pub eta: Option<String>,
     pub cancel: CancellationToken,
     pub timers: WakeTimers,
+}
+
+/// Each configured bot's adapter (R1.5): a [`CommandAdapter`] keeping wake files under
+/// `data_dir` and pointing agents at the loopback API, or a [`WebhookAdapter`] sending through
+/// the shared rustls client `http`.
+pub fn select_adapters(
+    config: &RouterConfig,
+    data_dir: &Path,
+    http: &reqwest::Client,
+) -> BTreeMap<BotName, Arc<dyn Adapter>> {
+    let webhook: Arc<dyn Adapter> = Arc::new(WebhookAdapter::new(http.clone()));
+    let command: Arc<dyn Adapter> = Arc::new(CommandAdapter::new(
+        data_dir.to_path_buf(),
+        format!("http://{}", config.api_bind),
+    ));
+    config
+        .bots
+        .iter()
+        .map(|(name, bot)| {
+            let adapter = match bot.adapter {
+                AdapterConfig::Command { .. } => command.clone(),
+                AdapterConfig::Webhook { .. } => webhook.clone(),
+            };
+            (name.clone(), adapter)
+        })
+        .collect()
 }
 
 /// Recent trigger events, for the payload context when the thread query fails (design 7).
@@ -280,6 +311,13 @@ impl Core {
                 ..
             }
         );
+        let async_webhook = matches!(
+            adapter_config,
+            AdapterConfig::Webhook {
+                mode: WebhookMode::Async,
+                ..
+            }
+        );
         let context = ContextSource {
             relay: self.relays.get(&bot).cloned(),
             roster: self.roster.clone(),
@@ -319,6 +357,7 @@ impl Core {
                 target,
                 owner_direct,
                 api_reply_mode,
+                async_webhook,
                 posts: 0,
                 posted: Vec::new(),
                 passed: false,
@@ -365,6 +404,8 @@ impl Core {
                         cancel.cancel();
                     });
                     self.finish(&wake.id, WakeState::Passed, "passed");
+                } else if running.async_webhook {
+                    self.finish(&wake.id, WakeState::Passed, "passed");
                 }
                 answer(reply, Ok(None));
             }
@@ -390,6 +431,10 @@ impl Core {
         let Some(running) = self.live(wake) else {
             return answer(reply, Err(ApiFailure::WakeEnded));
         };
+        // An async webhook's first post ends the wake once it is published (A6).
+        if running.async_webhook && running.posts > 0 {
+            return answer(reply, Err(ApiFailure::WakeEnded));
+        }
         if running.posts >= max_posts {
             return answer(reply, Err(ApiFailure::TooManyPosts));
         }
@@ -424,10 +469,14 @@ impl Core {
         let running = self.running.get_mut(&wake_id);
         match (purpose, result) {
             (Purpose::Api(reply), Ok(())) => {
-                if let Some(running) = running {
+                let ends = running.is_some_and(|running| {
                     running.posted.push(event_id.to_string());
-                }
+                    running.async_webhook
+                });
                 answer(reply, Ok(Some(event_id.to_string())));
+                if ends {
+                    self.finish(&wake_id, WakeState::Posted, "posted");
+                }
             }
             (Purpose::Api(reply), Err(error)) => {
                 if let Some(running) = running {

@@ -127,8 +127,14 @@ impl Core {
         }
     }
 
-    /// Cancels `bot`'s running wakes, ending them as `killed` with 🛑 on their reaction targets.
+    /// Cancels `bot`'s running wakes, ending them as `killed` with 🛑 on their reaction targets,
+    /// and tells the adapter in the background (a webhook's `cancel_url`, DD-16).
     fn kill_running(&mut self, bot: &BotName) {
+        let notify = self
+            .adapters
+            .get(bot)
+            .cloned()
+            .zip(self.config.bots.get(bot).map(|bot| bot.adapter.clone()));
         let wake_ids: Vec<_> = self
             .running
             .iter()
@@ -140,6 +146,9 @@ impl Core {
                 running.cancel.cancel();
             }
             self.finish(&wake_id, WakeState::Killed, "killed");
+            if let Some((adapter, config)) = &notify {
+                self.publishes.spawn(adapter.killed(config, wake_id));
+            }
         }
     }
 
