@@ -61,3 +61,10 @@ Everything you need is inside your worktree under .squad/ (you cannot read outsi
 - RELAY LOCK: only one agent may run the local Docker relay at a time. Wrap relay use: `until mkdir /private/tmp/buzz-relay.lock 2>/dev/null; do sleep 15; done; trap 'rmdir /private/tmp/buzz-relay.lock' EXIT` ... `scripts/e2e-relay.sh up` ... run ... `scripts/e2e-relay.sh down`. Never leave the relay running or the lock held.
 - cursor: 7.1 -> 7.2 -> 7.5.  opencode: 8.1 (docs-dev, kyber-weave frontmatter, validate).  pi: 7.3 and 7.4 once T7.1 lands.
 - Findings from 2.9: a `#e`-only REST query is rejected (403); filters need `kinds` too.
+
+## LANE UPDATE 6: REVIEW FIXES (full council review is in .squad/REVIEW.md; numbers below refer to its findings)
+All tasks are landed; this is the fix pass. Use the bug-crusher workflow per finding (or conductor test-first for behaviour changes): failing test first where the finding is behavioural, then fix. One commit per finding or tight group, subject `FIX #<n>: <summary>`, then `bash .squad/merge.sh`. Stay inside your lane's files.
+- Lane A (cursor): #1 (CRITICAL), #4, #5, #6, #11, #22, #23 — relay/ , cli/run.rs, adapter/command.rs pid-file only.
+- Lane B (pi): #2, #3, #8, #9, #10, #16 — core/dispatch.rs, core/apply.rs, cli/control.rs, logging.rs.
+- Lane C (opencode): #12 (release.yml), #13, #14 (e2e tests), #15 (conformance fixtures, one per listed rule; if a fixture exposes a routing bug, fix it in router-core), #17, #18 and the unticked-header reconciliation (tick the 9 task headers listed in the review; leave the 3 CI-pending sub-boxes).
+- HELD for owner (do NOT do): #7 shutdown behaviour, #19 (.squad removal is done last by Claude), #20 Windows restart, #21 runbook rollback section.
