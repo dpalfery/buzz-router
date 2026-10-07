@@ -75,12 +75,18 @@ pub fn prune_old_logs(dir: &Path, keep: usize) -> io::Result<usize> {
 /// A non-blocking writer for the daily-rotating JSON log under
 /// `<data-dir>/logs/`. The returned guard flushes on drop and must be kept
 /// alive as long as logging continues. Older files are pruned to
-/// [`MAX_LOG_FILES`].
+/// [`MAX_LOG_FILES`] on every rotation, so a long-running daemon stays
+/// within the limit too; pre-existing excess files are pruned here as well.
 pub fn file_writer(data_dir: &Path) -> io::Result<(NonBlocking, WorkerGuard)> {
     let dir = log_dir(data_dir);
     std::fs::create_dir_all(&dir)?;
     let _ = prune_old_logs(&dir, MAX_LOG_FILES);
-    let appender = tracing_appender::rolling::daily(&dir, LOG_FILE_PREFIX);
+    let appender = tracing_appender::rolling::Builder::new()
+        .rotation(tracing_appender::rolling::Rotation::DAILY)
+        .filename_prefix(LOG_FILE_PREFIX)
+        .max_log_files(MAX_LOG_FILES)
+        .build(&dir)
+        .map_err(io::Error::other)?;
     Ok(tracing_appender::non_blocking(appender))
 }
 
