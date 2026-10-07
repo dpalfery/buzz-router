@@ -197,6 +197,7 @@ impl Core {
         match message {
             CoreMsg::Enriched(event) => self.apply_event(&event),
             CoreMsg::RebuildThread { root, events } => self.rebuild(&root, events),
+            CoreMsg::Seen { bot, created_at } => self.advance_cursor(&bot, created_at),
             CoreMsg::Memberships { bot, channels } => {
                 self.memberships.insert(bot, channels);
             }
@@ -242,7 +243,7 @@ impl Core {
         match self.store.events().is_processed(id) {
             Ok(false) => {}
             Ok(true) => {
-                self.advance_cursor(ev);
+                self.advance_cursor(&ev.bot, ev.in_event.created_at);
                 return;
             }
             Err(error) => {
@@ -375,7 +376,7 @@ impl Core {
             self.control_effects(control, Some(&ev.event.id));
         }
         self.counters.last_decisions = result.decisions;
-        self.advance_cursor(ev);
+        self.advance_cursor(&ev.bot, ev.in_event.created_at);
     }
 
     /// Drops the wakes of a backfilled owner message more than 24 hours older than `now`, and
@@ -593,14 +594,14 @@ impl Core {
         })
     }
 
-    /// Moves the cursor for the receiving bot and relay to the event's `created_at` (R47.4).
-    fn advance_cursor(&self, ev: &EnrichedEvent) {
-        if let Err(error) =
-            self.store
-                .cursors()
-                .advance(&ev.bot, &self.config.relay_url, ev.in_event.created_at)
+    /// Moves the cursor for the receiving `bot` and the relay to an event's `created_at` (R47.4).
+    fn advance_cursor(&self, bot: &BotName, created_at: i64) {
+        if let Err(error) = self
+            .store
+            .cursors()
+            .advance(bot, &self.config.relay_url, created_at)
         {
-            tracing::warn!(%error, bot = %ev.bot, "cannot advance the cursor");
+            tracing::warn!(%error, bot = %bot, "cannot advance the cursor");
         }
     }
 

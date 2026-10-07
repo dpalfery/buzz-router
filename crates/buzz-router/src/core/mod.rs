@@ -108,6 +108,8 @@ pub(crate) enum CoreMsg {
         root: EventId,
         events: Vec<nostr::Event>,
     },
+    /// A bot received an event ingest had already forwarded or processed: move its cursor only.
+    Seen { bot: BotName, created_at: i64 },
     /// A bot's channel memberships changed.
     Memberships {
         bot: BotName,
@@ -401,6 +403,7 @@ async fn run_ingest(
                         IngestOutput::RebuildThread { root, events } => {
                             CoreMsg::RebuildThread { root, events }
                         }
+                        IngestOutput::Seen { bot, created_at } => CoreMsg::Seen { bot, created_at },
                     };
                     core_tx.send(message).is_ok()
                 }),

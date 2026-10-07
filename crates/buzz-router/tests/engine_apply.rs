@@ -440,6 +440,33 @@ async fn the_cursor_advances_after_the_apply() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_duplicate_delivered_to_another_bot_advances_that_bots_cursor() {
+    let (core, _relay, store) = spawn_test_core();
+    let o1 = top_level(&keys("owner"), channel(), "hello", base_secs() + 5);
+    core.ingest(bot("A"), o1.clone(), Source::Live);
+    core.flush().await;
+    core.ingest(bot("B"), o1.clone(), Source::Backfill);
+    core.flush().await;
+    assert_eq!(
+        store.cursors().get(&bot("B"), RELAY_URL).unwrap(),
+        Some(base_secs() as i64 + 5),
+        "a shared-channel bot's cursor moves even when another bot delivered the event first"
+    );
+
+    // Once processed, a later redelivery still advances the cursor of the bot that received it.
+    let o2 = top_level(&keys("owner"), channel(), "again", base_secs() + 9);
+    core.ingest(bot("A"), o2.clone(), Source::Live);
+    core.flush().await;
+    assert!(store.events().is_processed(&id(&o2)).unwrap());
+    core.ingest(bot("B"), o2, Source::Backfill);
+    core.flush().await;
+    assert_eq!(
+        store.cursors().get(&bot("B"), RELAY_URL).unwrap(),
+        Some(base_secs() as i64 + 9)
+    );
+}
+
+#[tokio::test(start_paused = true)]
 async fn wake_counts_cover_the_trailing_hour_and_day() {
     let store = Store::open_in_memory().unwrap();
     let root = EventId::from_hex(&"ab".repeat(32)).unwrap();

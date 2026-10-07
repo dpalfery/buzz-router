@@ -5,7 +5,8 @@
 //!
 //! 1. drops it unless its signature verifies (R4.1);
 //! 2. ignores it unless it is kind 9 or 40003 with an `h` tag holding a channel UUID (R61.3);
-//! 3. skips it when it was already forwarded or is already processed in `events` (R47.3, R61.4);
+//! 3. when it was already forwarded or is already processed in `events`, emits only
+//!    [`IngestOutput::Seen`] so the core moves the receiving bot's cursor (R47.3, R47.4, R61.4);
 //! 4. resolves its thread: a message's from its NIP-10 tags, an edit's from the edited message,
 //!    looked up in `events` or the forwarded map, else fetched from the relay (R16.7);
 //! 5. for a reply under a root it has not seen, fetches the thread and emits
@@ -80,6 +81,14 @@ pub enum IngestOutput {
         /// The thread's kind-9 events ordered before the current one.
         events: Vec<Event>,
     },
+    /// `bot` received an event that was already forwarded or processed. The event isn't routed
+    /// again, but the core still moves `bot`'s cursor to `created_at` (R47.4, DD-1).
+    Seen {
+        /// The local bot whose connection received the duplicate.
+        bot: BotName,
+        /// The duplicate's `created_at`, in unix seconds.
+        created_at: i64,
+    },
 }
 
 /// What ingest remembers about an event it forwarded.
@@ -143,7 +152,8 @@ impl Ingest {
     }
 
     /// Runs one raw event received by `bot` through ingest steps 1 to 7 and returns what to send
-    /// the core, in order. Dropped, ignored and duplicate events give nothing.
+    /// the core, in order. Dropped and ignored events give nothing; a duplicate gives only
+    /// [`IngestOutput::Seen`].
     pub async fn handle(
         &mut self,
         bot: &BotName,
@@ -162,10 +172,13 @@ impl Ingest {
             return Vec::new();
         };
         let id = EventId::from_nostr(&event.id);
-        if self.forwarded.contains(&id) || self.is_processed(&id) {
-            return Vec::new();
-        }
         let in_event = in_event(&event, ChannelId::from(channel));
+        if self.forwarded.contains(&id) || self.is_processed(&id) {
+            return vec![IngestOutput::Seen {
+                bot: bot.clone(),
+                created_at: in_event.created_at,
+            }];
+        }
 
         let mut out = Vec::new();
         let mut parent_author = None;

@@ -622,7 +622,7 @@ Requirements: 4.1, 16.7, 18.2, 47.3, 51, 61.4.
 
 1. Parse it as `nostr::Event` and check `event.verify()`. Drop it on failure (R4.1).
 2. Ignore it unless its kind is 9 or 40003 and it has an `h` tag with a UUID (R61.3).
-3. **Dedupe.** Skip if the id is in the in-memory forwarded set (an LRU of 100 000 entries) or `events.processed_at IS NOT NULL` (R47.3, R61.4).
+3. **Dedupe.** If the id is in the in-memory forwarded set (an LRU of 100 000 entries) or `events.processed_at IS NOT NULL`, don't route it again (R47.3, R61.4). Send the core `Seen{bot, created_at}` instead, and the core moves that bot's cursor (R47.4). This keeps the cursor of a bot that shares a channel moving when another bot delivered the event first, and the core stays the only cursor writer (DD-1).
 4. **Resolve the thread:**
    - kind 9: `thread_position(tags)`;
    - kind 40003: the target is the unmarked `e` tag (`build_edit` emits `["e", <target>]`, `crates/buzz-sdk/src/builders.rs:407`). Look up its `root_id` in `events` or the forwarded map, else REST-query `{ids:[target]}` and resolve its thread (R16.7).

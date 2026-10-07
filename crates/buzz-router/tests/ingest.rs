@@ -97,7 +97,7 @@ fn enriched(outputs: &[IngestOutput]) -> Vec<&EnrichedEvent> {
         .iter()
         .filter_map(|output| match output {
             IngestOutput::Enriched(event) => Some(event.as_ref()),
-            IngestOutput::RebuildThread { .. } => None,
+            IngestOutput::RebuildThread { .. } | IngestOutput::Seen { .. } => None,
         })
         .collect()
 }
@@ -173,7 +173,7 @@ async fn the_same_id_from_two_bots_is_forwarded_once() {
         .await;
     let second = h.ingest.handle(&bot("B"), event, Source::Live).await;
     assert_eq!(only_enriched(&first).bot, bot("A"));
-    assert!(second.is_empty(), "{second:?}");
+    assert_seen(&second, "B", 100);
 }
 
 #[tokio::test(start_paused = true)]
@@ -183,7 +183,22 @@ async fn an_already_processed_id_is_skipped() {
     seed_event(&store, &event, &event, true);
     let mut h = harness(store);
     let out = h.ingest.handle(&bot("A"), event, Source::Backfill).await;
-    assert!(out.is_empty(), "{out:?}");
+    assert_seen(&out, "A", 100);
+}
+
+/// Asserts that a duplicate gave only a `Seen` for `bot` at `created_at`, so the core can move
+/// that bot's cursor without routing the event again.
+fn assert_seen(outputs: &[IngestOutput], bot_name: &str, created_at: i64) {
+    match outputs {
+        [IngestOutput::Seen {
+            bot: seen,
+            created_at: at,
+        }] => {
+            assert_eq!(*seen, bot(bot_name));
+            assert_eq!(*at, created_at);
+        }
+        other => panic!("expected only a Seen for {bot_name}, got {other:?}"),
+    }
 }
 
 #[tokio::test(start_paused = true)]
