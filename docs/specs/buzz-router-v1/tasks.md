@@ -26,11 +26,11 @@ last-reviewed: 2026-10-06
 | Pull request | [#1 (draft)](https://github.com/dpalfery/buzz-router/pull/1) |
 | Last task commit | `22dd879` (T1.11) |
 | Tests | 389 passed, 0 failed (`cargo test --workspace --locked`, macOS arm64). `clippy -D warnings` and `fmt --check` are clean. `router-core` is tokio-free. 59 conformance cases. |
-| CI | Docs Gate only. There is no Rust CI yet (see O1), so there are no Linux or Windows results. |
+| CI | Rust CI skeleton (`.github/workflows/ci.yml`) exists plus Docs Gate. 3-OS green pending first CI run. |
 
 | Milestone | Tasks | Status |
 |---|---|---|
-| 1. router-core and conformance | 1.1–1.11 | 10 of 11 done. 1.1 is blocked on criterion 6 (ci.yml, O1). |
+| 1. router-core and conformance | 1.1–1.11 | 11 of 11 done. 3-OS CI green pending first CI run. |
 | 2. Relay I/O | 2.1–2.9 | Not started. **Resume point: 2.1** |
 | 3. Wake engine plus stop | 3.1–3.10 | Not started |
 | 4. State and recovery | 4.1–4.4 | Not started |
@@ -147,7 +147,7 @@ Tests are written before implementation, so these public names and signatures ar
 
 ## Milestone 1: router-core and conformance (brief §17.1)
 
-- [ ] **1.1 Scaffolding and verification**
+- [x] **1.1 Scaffolding and verification**
   - **Objective:** Create the cargo workspace, crate skeletons, lints and CI skeleton. Prove the Buzz git dependencies resolve, and pin `keyring`.
   - **Files:** `Cargo.toml`, `Cargo.lock`, `clippy.toml`, `rustfmt.toml`, `crates/router-core/{Cargo.toml,src/lib.rs}`, `crates/buzz-router/{Cargo.toml,src/lib.rs,src/main.rs}`, `crates/test-agent/{Cargo.toml,src/main.rs}`, `.github/workflows/ci.yml`, `crates/router-core/tests/smoke.rs`, `crates/buzz-router/tests/smoke.rs`.
   - **Design:** §2, §3.1, §3.2, §3.3, §15.
@@ -189,9 +189,9 @@ Tests are written before implementation, so these public names and signatures ar
     - *RED:* there is no workspace, so `cargo test` fails with `could not find Cargo.toml`.
     - *GREEN:* both smoke tests pass locally and in the CI skeleton on all three OSes.
   - [x] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
-  - **Status:** done except criterion 6 (`.github/workflows/ci.yml`), which is blocked on owner decision O1 (see Progress). Commit `9c932ee`. Local smoke tests are green; the GREEN criterion "in CI on all three OSes" is unmet until ci.yml exists.
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** commits `9c932ee` (scaffold) and `a54ee98` (ci.yml skeleton, criterion 6). Local smoke tests are green; 3-OS CI green pending first CI run.
 
 - [x] **1.2 Config types, validation and example files**
   - **Objective:** Parse and validate `roster.toml` and `router.toml` into resolved types, collecting every issue at once. Ship placeholder example files.
