@@ -960,9 +960,10 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
         - the process exits 0 on ctrl-c or SIGTERM.
     - *RED:* `run` returns "not implemented".
     - *GREEN:* passes on all three OSes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** T3.10 commit. RED: `run` exited 4 ("not implemented") where 1 was expected, and the API never listened. `cargo test -p buzz-router --test cli_run`: 3 passed on macOS (the signal checks are Unix-only; on Windows the valid-config test kills the process). A bot whose key fails to load, or doesn't match its roster pubkey, is left out of the core's local bots and logged as unavailable; its `status` field comes with task 4.3.
 
 ## Milestone 4: state and recovery (brief §17.4)
 

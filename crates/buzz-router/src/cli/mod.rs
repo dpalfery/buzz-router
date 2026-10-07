@@ -4,7 +4,7 @@
 //! handler returns `Result<(), CliError>`. On `Err`, `main` writes one JSON line to stderr, nothing
 //! to stdout, and exits with the code of the error's kind.
 //!
-//! Only `roster check`, `route --replay`, `capture`, `keys`, `service`, `post`, `pass`, `eta`, `stop`, `resume` and `cancel` are built so far. The other commands are in the tree,
+//! Only `run`, `roster check`, `route --replay`, `capture`, `keys`, `service`, `post`, `pass`, `eta`, `stop`, `resume` and `cancel` are built so far. The other commands are in the tree,
 //! with their flags, and fail with `CliError::other("not implemented")` until their tasks.
 
 mod agent;
@@ -13,6 +13,7 @@ mod control;
 pub mod keys;
 mod replay;
 mod roster;
+mod run;
 mod service;
 
 use std::io::{self, Write};
@@ -344,7 +345,10 @@ fn run() -> Result<(), CliError> {
         Ok(cli) => cli,
         Err(error) => return usage_outcome(&error),
     };
-    logging::init();
+    // `run` installs logging itself, with the file layer in its data directory.
+    if !matches!(cli.command, Command::Run) {
+        logging::init();
+    }
     let dirs = Dirs::resolve(cli.config_dir, cli.data_dir)
         .map_err(|error| CliError::other(error.to_string()))?;
     dispatch(cli.command, &dirs)
@@ -391,7 +395,8 @@ fn dispatch(command: Command, dirs: &Dirs) -> Result<(), CliError> {
         Command::Stop(args) => control::run(dirs, control::Action::Stop, &args.bots),
         Command::Resume(args) => control::run(dirs, control::Action::Resume, &args.bots),
         Command::Cancel(args) => control::run(dirs, control::Action::Cancel, &args.bots),
-        Command::Run | Command::Status(_) | Command::Wakes(_) => Err(not_implemented()),
+        Command::Run => run::run(dirs),
+        Command::Status(_) | Command::Wakes(_) => Err(not_implemented()),
     }
 }
 

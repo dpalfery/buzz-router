@@ -82,6 +82,7 @@ hmac = { workspace = true }
 # The HTTP API (task 3.6): the routers and the constant-time admin-token check.
 axum = { workspace = true }
 subtle = { workspace = true }
+rustls = { workspace = true }
 
 # The CLI stop fallback (task 3.8): killing a wake's process group.
 [target.'cfg(unix)'.dependencies]
