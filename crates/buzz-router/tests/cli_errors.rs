@@ -40,9 +40,8 @@
 //! built they would start a daemon or change the operating system's services. Their presence is
 //! covered by `cli_surface.rs`.
 //!
-//! **Not tested.** A clap usage error from a value the clap tree itself validates, such as
-//! `capture --since 7x`: whether the task 1.11 tree validates a duration, or leaves it to the
-//! `capture` command (task 2.8), is not fixed.
+//! **Not tested here.** `capture --since 7x`: the `capture` command validates the duration itself
+//! (task 2.8), and `cli_capture.rs` asserts its exit 1.
 
 #![allow(
     clippy::expect_used,
@@ -96,7 +95,7 @@ const INVALID_ROUTER_TOML: &str = "roster_path = = \"other.toml\"\n[[[\n";
 
 /// The commands that are not built yet, each once, with its flags (design 12.1). See the module
 /// documentation: a later task deletes its commands' rows.
-const NOT_YET_BUILT: [&[&str]; 9] = [
+const NOT_YET_BUILT: [&[&str]; 8] = [
     &["status", "--json"],
     &["stop", "--bot", "A", "--bot", "B"],
     &["resume", "--bot", "A"],
@@ -105,13 +104,6 @@ const NOT_YET_BUILT: [&[&str]; 9] = [
     &["pass"],
     &["eta", "--text", "about 10 minutes"],
     &["wakes", "--bot", "A", "--state", "queued"],
-    &[
-        "capture",
-        "--channel",
-        "00000000-0000-0000-0000-000000000001",
-        "--since",
-        "7d",
-    ],
 ];
 
 /// The error line a failing command must print (decisions D1 and D4).

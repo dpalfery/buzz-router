@@ -650,7 +650,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
   - [ ] GREEN
   - [ ] REFACTOR
 
-- [ ] **2.8 `capture` command**
+- [x] **2.8 `capture` command**
   - **Objective:** Dump a channel's events as JSON Lines.
   - **Files:** `crates/buzz-router/src/cli/capture.rs`, `crates/buzz-router/tests/cli_capture.rs`.
   - **Design:** §12.1.
@@ -666,9 +666,9 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - A channel with no member bot exits 1.
     - *RED:* the command returns "not implemented", exit 4.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 - [ ] **2.9 Relay I/O against a local Buzz relay [Docker + local Buzz relay]**
   - **Objective:** Prove the relay layer against a real local Buzz relay, as brief §17.2 asks.
