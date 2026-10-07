@@ -4,7 +4,7 @@
 //! While every bot has a running wake, the owner posts `stop`: every agent
 //! process is gone within 5 s, each bot reacts 🛑, nothing is published
 //! afterwards, the halt survives a router restart, and `resume` brings back
-//! ▶️ and normal routing. Skipped unless `BUZZ_E2E=1`. Run with:
+//! ▶️ and normal routing. Ignored by default, and fails without `BUZZ_E2E=1`. Run with:
 //!
 //! ```sh
 //! BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 \
@@ -64,9 +64,7 @@ fn agent_pids(e2e: &E2e) -> Vec<u32> {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn stop_kills_every_wake_and_the_halt_survives_a_restart() {
-    let Some(mut e2e) = E2e::start("e2e-stop", 30).await else {
-        return;
-    };
+    let mut e2e = E2e::start("e2e-stop", 30).await;
 
     e2e.wait_all_connected().await;
 

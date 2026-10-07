@@ -2,7 +2,7 @@
 //! task. 👀 appears immediately, one status note appears at about 20 s, and
 //! the final reply is threaded under O's message.
 //!
-//! Skipped unless `BUZZ_E2E=1`. Run with:
+//! Ignored by default, and fails without `BUZZ_E2E=1`. Run with:
 //!
 //! ```sh
 //! BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 \
@@ -33,9 +33,7 @@ fn e_tag(event: &nostr::Event, marker: &str) -> Option<String> {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn e4_long_task_gets_eyes_one_status_note_and_a_threaded_reply() {
-    let Some(mut e2e) = E2e::start("e2e-e4", TASK_SECS).await else {
-        return;
-    };
+    let mut e2e = E2e::start("e2e-e4", TASK_SECS).await;
     e2e.wait_all_connected().await;
 
     let task = e2e.owner_post("@A run the 60 second task").await;

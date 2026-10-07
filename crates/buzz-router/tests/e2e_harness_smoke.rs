@@ -1,7 +1,7 @@
 //! End-to-end harness smoke test (task 7.1, requirement R66.1, design §16.4).
 //!
 //! The router runs as a child process against a local Buzz relay with three
-//! throwaway bots. Skipped unless `BUZZ_E2E=1`. Run with:
+//! throwaway bots. Ignored by default, and fails without `BUZZ_E2E=1`. Run with:
 //!
 //! ```sh
 //! BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 \
@@ -16,9 +16,7 @@ use e2e_support::{E2e, EYES};
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn router_connects_all_bots_and_answers_a_mention() {
-    let Some(mut e2e) = E2e::start("e2e-smoke", 0).await else {
-        return;
-    };
+    let mut e2e = E2e::start("e2e-smoke", 0).await;
 
     e2e.wait_all_connected().await;
     let status = e2e.status().await;

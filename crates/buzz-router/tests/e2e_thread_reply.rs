@@ -2,7 +2,7 @@
 //! "@A", A replies, then O replies untagged in the thread panel. A is woken
 //! and replies.
 //!
-//! Skipped unless `BUZZ_E2E=1`. Run with:
+//! Ignored by default, and fails without `BUZZ_E2E=1`. Run with:
 //!
 //! ```sh
 //! BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 \
@@ -17,9 +17,7 @@ use e2e_support::{E2e, EYES};
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn e1_untagged_owner_reply_in_the_thread_wakes_a() {
-    let Some(mut e2e) = E2e::start("e2e-e1", 0).await else {
-        return;
-    };
+    let mut e2e = E2e::start("e2e-e1", 0).await;
     e2e.wait_all_connected().await;
 
     let root = e2e.owner_post("@A what is the plan?").await;

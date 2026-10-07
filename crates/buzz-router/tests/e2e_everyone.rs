@@ -2,8 +2,8 @@
 //! §16.4).
 //!
 //! The owner posts `@everyone`; every bot reacts 👀 within 5 s, no bot is
-//! woken more than 4 times, and the thread goes quiet. Skipped unless
-//! `BUZZ_E2E=1`. Run with:
+//! woken more than 4 times, and the thread goes quiet. Ignored by default,
+//! and fails without `BUZZ_E2E=1`. Run with:
 //!
 //! ```sh
 //! BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 \
@@ -74,9 +74,7 @@ async fn wake_reasons(e2e: &E2e, name: &str) -> Vec<String> {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn everyone_wakes_every_bot_and_the_thread_goes_quiet() {
-    let Some(mut e2e) = E2e::start("e2e-everyone", 0).await else {
-        return;
-    };
+    let mut e2e = E2e::start("e2e-everyone", 0).await;
 
     e2e.wait_all_connected().await;
 

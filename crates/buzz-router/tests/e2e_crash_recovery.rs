@@ -3,7 +3,7 @@
 //! The router child is killed mid-wake, the owner posts while it is down,
 //! then it restarts: the interrupted wake is re-run exactly once, the message
 //! sent during the downtime is answered, and there are no duplicate replies.
-//! Skipped unless `BUZZ_E2E=1`. Run with:
+//! Ignored by default, and fails without `BUZZ_E2E=1`. Run with:
 //!
 //! ```sh
 //! BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 \
@@ -20,9 +20,7 @@ use e2e_support::{E2e, EYES};
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn killed_mid_wake_reruns_once_and_answers_the_downtime_message() {
-    let Some(mut e2e) = E2e::start("e2e-crash", 10).await else {
-        return;
-    };
+    let mut e2e = E2e::start("e2e-crash", 10).await;
 
     e2e.wait_all_connected().await;
 

@@ -2,8 +2,9 @@
 //! R50.1, R61.1–R61.5).
 //!
 //! Every test provisions its own channel and mints fresh identities, so the
-//! tests share one relay without interfering. All tests are skipped unless
-//! `BUZZ_E2E=1`, and [`e2e_support::relay_url`] refuses anything but a local
+//! tests share one relay without interfering. All tests are ignored by
+//! default and fail without `BUZZ_E2E=1`, and [`e2e_support::relay_url`]
+//! refuses anything but a local
 //! relay. Run with:
 //!
 //! ```sh
@@ -31,8 +32,7 @@ use buzz_router::store::Store;
 use router_core::ids::{BotName, ChannelId};
 
 use e2e_support::{
-    channel_message, e2e_enabled, fresh_identities, provision_channel, relay_url, reply_to,
-    rest_for, TIMEOUT,
+    channel_message, fresh_identities, provision_channel, relay_url, reply_to, rest_for, TIMEOUT,
 };
 
 /// Runs `fut`, failing the test instead of hanging when the relay does not
@@ -41,15 +41,6 @@ async fn within<T>(what: &str, fut: impl Future<Output = T>) -> T {
     tokio::time::timeout(TIMEOUT, fut)
         .await
         .unwrap_or_else(|_| panic!("timed out waiting for {what}"))
-}
-
-/// The relay URL, or `None` when the e2e tests are skipped.
-fn relay_or_skip() -> Option<String> {
-    if e2e_enabled() {
-        Some(relay_url())
-    } else {
-        None
-    }
 }
 
 /// A synced connection with its sink and membership tap.
@@ -81,7 +72,7 @@ fn synced(url: &str, bot_keys: &nostr::Keys) -> SyncedConn {
 #[tokio::test]
 #[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn nip42_auth_standalone_succeeds() {
-    let Some(url) = relay_or_skip() else { return };
+    let url = relay_url();
     let ids = fresh_identities();
     let conn = spawn_connection(ConnParams::new(url, ids.bots[0].clone(), None));
     within("standalone NIP-42 auth", conn.wait_up()).await;
@@ -90,7 +81,7 @@ async fn nip42_auth_standalone_succeeds() {
 #[tokio::test]
 #[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn owner_attested_auth_succeeds() {
-    let Some(url) = relay_or_skip() else { return };
+    let url = relay_url();
     let ids = fresh_identities();
     let tag = buzz_sdk::nip_oa::compute_auth_tag(&ids.owner, &ids.bots[0].public_key(), "")
         .expect("owner attests the bot");
@@ -101,7 +92,7 @@ async fn owner_attested_auth_succeeds() {
 #[tokio::test]
 #[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn discovery_finds_the_provisioned_channel() {
-    let Some(url) = relay_or_skip() else { return };
+    let url = relay_url();
     let ids = fresh_identities();
     let owner_rest = rest_for(&ids.owner, &url);
     let channel = provision_channel(&owner_rest, &ids.owner, &ids.bots, "e2e-discovery").await;
@@ -123,7 +114,7 @@ async fn discovery_finds_the_provisioned_channel() {
 #[tokio::test]
 #[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn live_owner_message_arrives() {
-    let Some(url) = relay_or_skip() else { return };
+    let url = relay_url();
     let ids = fresh_identities();
     let owner_rest = rest_for(&ids.owner, &url);
     let channel = provision_channel(&owner_rest, &ids.owner, &ids.bots, "e2e-live").await;
@@ -146,7 +137,7 @@ async fn live_owner_message_arrives() {
 #[tokio::test]
 #[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn missed_messages_arrive_through_backfill() {
-    let Some(url) = relay_or_skip() else { return };
+    let url = relay_url();
     let ids = fresh_identities();
     let owner_rest = rest_for(&ids.owner, &url);
     let channel = provision_channel(&owner_rest, &ids.owner, &ids.bots, "e2e-backfill").await;
@@ -212,7 +203,7 @@ async fn missed_messages_arrive_through_backfill() {
 #[tokio::test]
 #[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn thread_fetch_returns_root_and_replies() {
-    let Some(url) = relay_or_skip() else { return };
+    let url = relay_url();
     let ids = fresh_identities();
     let owner_rest = rest_for(&ids.owner, &url);
     let channel = provision_channel(&owner_rest, &ids.owner, &ids.bots, "e2e-thread").await;
@@ -243,7 +234,7 @@ async fn thread_fetch_returns_root_and_replies() {
 #[tokio::test]
 #[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn reply_and_reaction_are_visible_through_rest() {
-    let Some(url) = relay_or_skip() else { return };
+    let url = relay_url();
     let ids = fresh_identities();
     let owner_rest = rest_for(&ids.owner, &url);
     let channel = provision_channel(&owner_rest, &ids.owner, &ids.bots, "e2e-publish").await;
@@ -291,7 +282,7 @@ async fn reply_and_reaction_are_visible_through_rest() {
 #[tokio::test]
 #[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn typing_indicator_gets_relay_ok() {
-    let Some(url) = relay_or_skip() else { return };
+    let url = relay_url();
     let ids = fresh_identities();
     let owner_rest = rest_for(&ids.owner, &url);
     let channel = provision_channel(&owner_rest, &ids.owner, &ids.bots, "e2e-typing").await;

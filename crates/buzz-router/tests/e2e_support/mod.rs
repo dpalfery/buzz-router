@@ -32,15 +32,21 @@ use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
 use uuid::Uuid;
 
-/// Whether the relay integration tests run. Everything is skipped unless
-/// `BUZZ_E2E=1`.
-pub fn e2e_enabled() -> bool {
-    std::env::var("BUZZ_E2E").as_deref() == Ok("1")
+/// Fails the test unless `BUZZ_E2E=1`. The e2e tests are `#[ignore]`d, so
+/// they run only when asked for with `--ignored`; without the variable they
+/// must fail rather than pass having checked nothing.
+pub fn require_e2e() {
+    assert!(
+        std::env::var("BUZZ_E2E").as_deref() == Ok("1"),
+        "the e2e tests need a local Buzz relay: set BUZZ_E2E=1 and BUZZ_E2E_RELAY_URL \
+         (scripts/e2e-relay.sh up prints it), or run without --ignored"
+    );
 }
 
-/// The relay URL under test, from `BUZZ_E2E_RELAY_URL`. Refuses anything that
-/// is not a local relay.
+/// The relay URL under test, from `BUZZ_E2E_RELAY_URL`, after
+/// [`require_e2e`]. Refuses anything that is not a local relay.
 pub fn relay_url() -> String {
+    require_e2e();
     let url = std::env::var("BUZZ_E2E_RELAY_URL")
         .expect("BUZZ_E2E_RELAY_URL must be set (scripts/e2e-relay.sh up prints it)");
     assert!(
@@ -200,16 +206,12 @@ struct RouterChild {
 impl E2e {
     /// Provisions a channel called `name` and starts the router, with every
     /// bot running `buzz-router-test-agent echo --delay <delay_secs>`.
-    /// Returns `None` when the e2e tests are skipped.
-    pub async fn start(name: &str, delay_secs: u64) -> Option<Self> {
+    pub async fn start(name: &str, delay_secs: u64) -> Self {
         Self::start_with(name, delay_secs, "").await
     }
 
     /// [`E2e::start`] with `limits` added to the roster's `[limits]` table.
-    pub async fn start_with(name: &str, delay_secs: u64, limits: &str) -> Option<Self> {
-        if !e2e_enabled() {
-            return None;
-        }
+    pub async fn start_with(name: &str, delay_secs: u64, limits: &str) -> Self {
         let url = relay_url();
         let ids = fresh_identities();
         let owner_rest = rest_for(&ids.owner, &url);
@@ -248,7 +250,7 @@ impl E2e {
             router: None,
         };
         e2e.spawn();
-        Some(e2e)
+        e2e
     }
 
     /// The keys of bot `name` (`"A"`, `"B"` or `"C"`).

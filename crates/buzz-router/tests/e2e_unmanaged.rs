@@ -2,7 +2,7 @@
 //! §16.4).
 //!
 //! Publishing directly with bot A's key gets ⚠️ on that post, and `status`
-//! shows `unmanaged_posts: 1`. Skipped unless `BUZZ_E2E=1`. Run with:
+//! shows `unmanaged_posts: 1`. Ignored by default, and fails without `BUZZ_E2E=1`. Run with:
 //!
 //! ```sh
 //! BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 \
@@ -17,9 +17,7 @@ use e2e_support::{E2e, WARNING};
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "needs a local Buzz relay: set BUZZ_E2E=1 and run with --ignored"]
 async fn direct_bot_post_gets_a_warning_and_is_counted() {
-    let Some(mut e2e) = E2e::start("e2e-unmanaged", 0).await else {
-        return;
-    };
+    let mut e2e = E2e::start("e2e-unmanaged", 0).await;
 
     e2e.wait_all_connected().await;
 
