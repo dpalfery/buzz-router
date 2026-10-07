@@ -232,6 +232,24 @@ async fn a_pass_ends_the_wake_as_passed() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_pass_after_a_post_ends_the_wake_as_posted() {
+    // Design 6.6 ranks posted above passed: a bot that posts and then passes leaves a Posted
+    // wake, not a Passed one with a ✅.
+    let api = api_with(vec![Step::Hang], "", API_ADAPTER_TOML).await;
+    let token = api.token(0);
+
+    let (status, _) = post(&api.loopback, Some(&token), "hello").await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, body) = send(&api.loopback, "POST", "/v1/pass", Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!({}));
+    api.core.flush().await;
+
+    assert_eq!(api.wake_state(0), WakeState::Posted);
+    assert_eq!(api.relay.messages("reply").len(), 1);
+}
+
+#[tokio::test(start_paused = true)]
 async fn an_eta_is_used_by_the_status_note() {
     let api = api(vec![Step::Hang]).await;
 

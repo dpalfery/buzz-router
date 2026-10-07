@@ -397,15 +397,20 @@ impl Core {
                     return answer(reply, Err(ApiFailure::WakeEnded));
                 };
                 running.passed = true;
-                if running.api_reply_mode {
-                    let cancel = running.cancel.clone();
+                // Design 6.6 ranks posted above passed: a pass after a reply ends the wake
+                // posted, not passed.
+                let posted = running.posts > 0;
+                let api_reply_mode = running.api_reply_mode;
+                let async_webhook = running.async_webhook;
+                let cancel = running.cancel.clone();
+                if api_reply_mode {
                     tokio::spawn(async move {
                         tokio::time::sleep(PASS_GRACE).await;
                         cancel.cancel();
                     });
-                    self.finish(&wake.id, WakeState::Passed, "passed");
-                } else if running.async_webhook {
-                    self.finish(&wake.id, WakeState::Passed, "passed");
+                    self.finish_pass(&wake.id, posted);
+                } else if async_webhook {
+                    self.finish_pass(&wake.id, posted);
                 }
                 answer(reply, Ok(None));
             }
@@ -657,6 +662,15 @@ impl Core {
                 result,
             });
         });
+    }
+
+    /// Ends a wake after an API pass: posted when it already published a reply, else passed.
+    fn finish_pass(&mut self, wake_id: &Uuid, posted: bool) {
+        if posted {
+            self.finish(wake_id, WakeState::Posted, "posted");
+        } else {
+            self.finish(wake_id, WakeState::Passed, "passed");
+        }
     }
 
     /// Ends a running wake: records the state and outcome (revoking the token), reacts as the
