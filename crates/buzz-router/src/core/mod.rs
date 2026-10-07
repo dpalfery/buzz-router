@@ -7,12 +7,14 @@
 //! - the **core actor**, which owns the SQLite write connection and all mutable state, and
 //!   serialises every mutation. Its loop waits for a message, the next queued wake falling due,
 //!   or a 1-second tick, so wall-clock deadlines are re-checked after an OS sleep. After each
-//!   message or timer it runs the scheduler ([`queue`]).
+//!   message or timer it fires the running wakes' timers and runs the scheduler ([`queue`]).
 //!
 //! [`CoreHandle`] is the only way in. Its `flush` and `debug_counters` exist for tests.
 
 mod apply;
+mod dispatch;
 pub mod queue;
+mod timers;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -29,8 +31,10 @@ use crate::clock::Clock;
 use crate::ingest::{EnrichedEvent, Ingest, IngestOutput, Source};
 use crate::relay::RelayPort;
 use crate::store::Store;
+use dispatch::Purpose;
 
 pub use apply::wake_counts;
+pub use dispatch::{ApiFailure, ApiRequest, ApiResponse};
 
 /// The longest the core actor sleeps between loop turns.
 const TICK: Duration = Duration::from_secs(1);
@@ -80,8 +84,19 @@ pub(crate) enum CoreMsg {
         bot: BotName,
         channels: BTreeSet<ChannelId>,
     },
+    /// Discovery found a channel's name.
+    ChannelName { channel: ChannelId, name: String },
     /// A wake's adapter run ended.
     WakeEnded { wake_id: Uuid, event: AdapterEvent },
+    /// A wake-token API request.
+    Api(ApiRequest, oneshot::Sender<ApiResponse>),
+    /// A tracked publish (reply or status note) completed.
+    Published {
+        wake_id: Uuid,
+        event_id: EventId,
+        purpose: Purpose,
+        result: Result<(), String>,
+    },
     /// Reply once everything sent before has been applied (tests only).
     Flush(oneshot::Sender<()>),
     /// Reply with the counters (tests only).
@@ -123,6 +138,22 @@ impl CoreHandle {
     /// Reports a bot's channel memberships from discovery.
     pub fn memberships(&self, bot: BotName, channels: BTreeSet<ChannelId>) {
         let _ = self.core_tx.send(CoreMsg::Memberships { bot, channels });
+    }
+
+    /// Reports a channel's name from discovery (kind 39000).
+    pub fn channel_name(&self, channel: ChannelId, name: String) {
+        let _ = self.core_tx.send(CoreMsg::ChannelName { channel, name });
+    }
+
+    /// Sends a wake-token request to the core and waits for its answer.
+    pub async fn api(&self, request: ApiRequest) -> ApiResponse {
+        let (tx, rx) = oneshot::channel();
+        if self.core_tx.send(CoreMsg::Api(request, tx)).is_err() {
+            return ApiResponse::Failed(ApiFailure::Internal("the core has stopped".to_owned()));
+        }
+        rx.await.unwrap_or_else(|_| {
+            ApiResponse::Failed(ApiFailure::Internal("the core has stopped".to_owned()))
+        })
     }
 
     /// Resolves once every event ingested before the call has been applied, and the publishes it
@@ -210,7 +241,9 @@ async fn run_core(mut core: apply::Core, mut rx: mpsc::UnboundedReceiver<CoreMsg
                 None | Some(CoreMsg::Shutdown) => break,
                 Some(message) => core.handle(message).await,
             },
-            () = tokio::time::sleep(wait) => core.schedule(),
+            () = tokio::time::sleep(wait) => {}
         }
+        core.fire_timers();
+        core.schedule();
     }
 }

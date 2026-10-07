@@ -773,7 +773,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
   - [x] GREEN
   - [x] REFACTOR
 
-- [ ] **3.4 Dispatch, lifecycle, timers and endings**
+- [x] **3.4 Dispatch, lifecycle, timers and endings**
   - **Objective:** Implement the dispatch steps, the `Adapter` trait, payload context building, typing every 3 s, the deadline and status-note timers, and the endings table with its reactions.
   - **Files:** `crates/buzz-router/src/core/{dispatch.rs,timers.rs}`, `crates/buzz-router/src/adapter/mod.rs`, and `crates/buzz-router/tests/{engine_dispatch.rs,engine_deadline.rs,engine_status_note.rs,engine_endings.rs}`.
   - **Design:** §6.6, §7 (payload building), DD-10, DD-17.
@@ -799,9 +799,9 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - Across all scenarios, the only kind-9 events published are agent replies and status notes (R45.1).
     - *RED:* compile error, unresolved `buzz_router::adapter::Adapter`; dispatch assertions fail.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 - [ ] **3.5 Command adapter and test agent**
   - **Objective:** Implement `CommandAdapter` (process group, environment, prompt modes, capped stdout, stderr logging, scratch files, pid file) and the `buzz-router-test-agent` modes.

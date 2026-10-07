@@ -30,7 +30,8 @@ use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use uuid::Uuid;
 
-use super::queue::{enqueue, Debounce, RunningWake, Trigger};
+use super::dispatch::{RunningWake, TriggerCache};
+use super::queue::{enqueue, Debounce, Trigger};
 use super::{CoreMsg, DebugCounters};
 use crate::adapter::Adapter;
 use crate::clock::Clock;
@@ -114,15 +115,19 @@ pub(super) struct Core {
     pub(super) config: RouterConfig,
     local_bots: BTreeSet<BotName>,
     pub(super) clock: Arc<dyn Clock>,
-    relays: BTreeMap<BotName, Arc<dyn RelayPort>>,
-    keys: BTreeMap<BotName, nostr::Keys>,
+    pub(super) relays: BTreeMap<BotName, Arc<dyn RelayPort>>,
+    pub(super) keys: BTreeMap<BotName, nostr::Keys>,
     memberships: BTreeMap<BotName, BTreeSet<ChannelId>>,
+    /// Channel names from discovery (kind 39000).
+    pub(super) channel_names: HashMap<ChannelId, String>,
     pub(super) adapters: BTreeMap<BotName, Arc<dyn Adapter>>,
     pub(super) threads: ThreadCache,
     counters: DebugCounters,
     drift_logged: HashSet<Pubkey>,
-    publishes: JoinSet<()>,
+    pub(super) publishes: JoinSet<()>,
     pub(super) running: HashMap<Uuid, RunningWake>,
+    /// The events that triggered recent wakes, for the payload context fallback.
+    pub(super) trigger_events: TriggerCache,
     /// When the core received each thread's latest roster-bot post, in unix milliseconds.
     last_bot_post: HashMap<EventId, i64>,
     pub(super) self_tx: mpsc::UnboundedSender<CoreMsg>,
@@ -152,12 +157,14 @@ impl Core {
             relays: parts.relays,
             keys: parts.keys,
             memberships: parts.memberships,
+            channel_names: HashMap::new(),
             adapters: parts.adapters,
             threads: ThreadCache::default(),
             counters: DebugCounters::default(),
             drift_logged: HashSet::new(),
             publishes: JoinSet::new(),
             running: HashMap::new(),
+            trigger_events: TriggerCache::default(),
             last_bot_post: HashMap::new(),
             self_tx,
         }
@@ -172,7 +179,17 @@ impl Core {
             CoreMsg::Memberships { bot, channels } => {
                 self.memberships.insert(bot, channels);
             }
+            CoreMsg::ChannelName { channel, name } => {
+                self.channel_names.insert(channel, name);
+            }
             CoreMsg::WakeEnded { wake_id, event } => self.wake_ended(wake_id, event),
+            CoreMsg::Api(request, reply) => self.api(request, reply),
+            CoreMsg::Published {
+                wake_id,
+                event_id,
+                purpose,
+                result,
+            } => self.published(wake_id, event_id, purpose, result),
             CoreMsg::Flush(reply) => {
                 self.schedule();
                 while self.publishes.join_next().await.is_some() {}
@@ -310,6 +327,9 @@ impl Core {
                     .or_default() += 1;
                 tracing::info!(bot = %bot, event_id = %id, "wake suppressed by the budget");
             }
+        }
+        if has_wake {
+            self.trigger_events.put(&ev.event);
         }
         self.counters.last_decisions = result.decisions;
         for bot in reactions {
@@ -480,7 +500,7 @@ impl Core {
     }
 
     /// Publishes `bot`'s reaction `emoji` on `target` in the background (R45.2).
-    fn react(&mut self, bot: &BotName, target: &nostr::EventId, emoji: &str) {
+    pub(super) fn react(&mut self, bot: &BotName, target: &nostr::EventId, emoji: &str) {
         let (Some(keys), Some(relay)) = (self.keys.get(bot), self.relays.get(bot)) else {
             tracing::warn!(bot = %bot, "no key or relay for a reaction");
             return;
@@ -693,7 +713,7 @@ fn updated_thread(
 }
 
 /// The stored class of an author.
-fn event_class(class: &AuthorClass) -> EventClass {
+pub(super) fn event_class(class: &AuthorClass) -> EventClass {
     match class {
         AuthorClass::Owner => EventClass::Owner,
         AuthorClass::Bot(_) => EventClass::Bot,
@@ -704,7 +724,7 @@ fn event_class(class: &AuthorClass) -> EventClass {
 
 /// The author's display name: the roster bot name, `owner.name`, or the first 12 characters of
 /// the npub (design section 7).
-fn author_name(pubkey: &Pubkey, class: &AuthorClass, roster: &Roster) -> String {
+pub(super) fn author_name(pubkey: &Pubkey, class: &AuthorClass, roster: &Roster) -> String {
     match class {
         AuthorClass::Owner => roster.owner.name.clone(),
         AuthorClass::Bot(name) => name.to_string(),
@@ -720,7 +740,7 @@ fn author_name(pubkey: &Pubkey, class: &AuthorClass, roster: &Roster) -> String 
 }
 
 /// The `router_core` view of a stored-history event in `channel`.
-fn in_event(event: &Event, channel: ChannelId) -> InEvent {
+pub(super) fn in_event(event: &Event, channel: ChannelId) -> InEvent {
     InEvent {
         id: EventId::from_nostr(&event.id),
         pubkey: Pubkey::from_nostr(&event.pubkey),

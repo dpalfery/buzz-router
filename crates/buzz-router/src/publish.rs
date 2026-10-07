@@ -99,7 +99,7 @@ pub fn build_reply(
 
 /// Builds a kind-9 status note: like [`build_reply`] with the status text and
 /// the `status` marker, threaded under the reaction target (R46.2, R46.3).
-fn build_status(
+pub fn build_status_note(
     roster: &Roster,
     keys: &nostr::Keys,
     auth_tag: Option<&nostr::Tag>,
@@ -252,7 +252,7 @@ pub async fn publish_status_note(
     eta: Option<&str>,
 ) -> Result<nostr::Event, PublishError> {
     ensure_not_halted(deps, bot)?;
-    let event = build_status(
+    let event = build_status_note(
         &deps.roster,
         &deps.keys,
         deps.auth_tag.as_ref(),
@@ -294,6 +294,22 @@ pub async fn publish_typing(
     parent: &EventId,
 ) -> Result<nostr::Event, PublishError> {
     let _ = bot;
+    let event = build_typing(&deps.keys, channel, root, parent)?;
+    deps.relay
+        .publish(event.clone())
+        .await
+        .map_err(|error: RelayError| PublishError::Failed(error.to_string()))?;
+    Ok(event)
+}
+
+/// Builds a kind-20002 typing indicator like `buzz-acp`'s `build_typing_event`:
+/// empty content, an `h` tag, and the nested or direct `e` shape (R35.5).
+pub fn build_typing(
+    keys: &nostr::Keys,
+    channel: &ChannelId,
+    root: &EventId,
+    parent: &EventId,
+) -> Result<nostr::Event, PublishError> {
     let mut tags = vec![nostr::Tag::parse(["h", &channel.uuid().to_string()])
         .map_err(|error| failed("h tag", error))?];
     if root != parent {
@@ -306,13 +322,8 @@ pub async fn publish_typing(
         nostr::Tag::parse(["e", parent.as_str(), "", "reply"])
             .map_err(|error| failed("reply tag", error))?,
     );
-    let event = nostr::EventBuilder::new(nostr::Kind::Custom(20002), "")
+    nostr::EventBuilder::new(nostr::Kind::Custom(20002), "")
         .tags(tags)
-        .sign_with_keys(&deps.keys)
-        .map_err(|error| PublishError::Failed(format!("sign error: {error}")))?;
-    deps.relay
-        .publish(event.clone())
-        .await
-        .map_err(|error: RelayError| PublishError::Failed(error.to_string()))?;
-    Ok(event)
+        .sign_with_keys(keys)
+        .map_err(|error| PublishError::Failed(format!("sign error: {error}")))
 }

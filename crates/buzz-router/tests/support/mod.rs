@@ -15,12 +15,12 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::Duration;
 
 use buzz_router::adapter::{Adapter, AdapterEvent, WakeContext};
 use buzz_router::clock::{Clock, VirtualClock};
-use buzz_router::core::{spawn_core, CoreDeps, CoreHandle};
+use buzz_router::core::{spawn_core, ApiRequest, ApiResponse, CoreDeps, CoreHandle};
 use buzz_router::relay::{RelayError, RelayPort};
 use buzz_router::store::Store;
 use buzz_sdk::ThreadRef;
@@ -142,6 +142,11 @@ pub fn base_secs() -> u64 {
 /// A roster with owner `owner`, bots A, B and C on every channel responding to anyone, and
 /// `limits` (TOML lines) as the `[limits]` table.
 pub fn roster_toml(limits: &str) -> String {
+    roster_toml_with(limits, "")
+}
+
+/// [`roster_toml`] plus `extra` TOML appended, such as `[[channels]]` tables.
+pub fn roster_toml_with(limits: &str, extra: &str) -> String {
     let mut roster = format!(
         "version = 1\n\n[owner]\nname = \"Owner\"\npubkeys = [\"{}\"]\ntimezone = \"UTC\"\n\n[limits]\n{limits}\n",
         pubkey_hex("owner")
@@ -152,6 +157,7 @@ pub fn roster_toml(limits: &str) -> String {
             pubkey_hex(name)
         ));
     }
+    roster.push_str(extra);
     roster
 }
 
@@ -181,6 +187,8 @@ pub struct TestCoreOptions {
     pub seed: Option<Seed>,
     /// The adapter every bot uses.
     pub adapter: FakeAdapter,
+    /// Extra roster TOML, such as `[[channels]]` tables.
+    pub roster_extra: String,
 }
 
 impl Default for TestCoreOptions {
@@ -190,6 +198,7 @@ impl Default for TestCoreOptions {
             max_concurrent: 1,
             seed: None,
             adapter: FakeAdapter::new(vec![Step::Exit(0)]),
+            roster_extra: String::new(),
         }
     }
 }
@@ -209,10 +218,12 @@ pub fn spawn_test_core_with(options: TestCoreOptions) -> (CoreHandle, FakeRelay,
     if let Some(seed) = options.seed {
         seed(&store);
     }
-    let roster = parse_roster(&roster_toml(&options.limits)).unwrap();
+    let roster = parse_roster(&roster_toml_with(&options.limits, &options.roster_extra)).unwrap();
     let config = parse_router(&router_toml(options.max_concurrent), &roster).unwrap();
     let clock: Arc<dyn Clock> = Arc::new(VirtualClock::new(base_time()));
-    let adapter: Arc<dyn Adapter> = Arc::new(options.adapter.with_clock(clock.clone()));
+    let fake = options.adapter.with_clock(clock.clone());
+    let core_slot = fake.core.clone();
+    let adapter: Arc<dyn Adapter> = Arc::new(fake);
     let relay = FakeRelay::new();
     let mut relays: BTreeMap<BotName, Arc<dyn RelayPort>> = BTreeMap::new();
     let mut keys_by_bot = BTreeMap::new();
@@ -236,6 +247,7 @@ pub fn spawn_test_core_with(options: TestCoreOptions) -> (CoreHandle, FakeRelay,
         memberships,
         adapters,
     });
+    let _ = core_slot.set(handle.clone());
     (handle, relay, store)
 }
 
@@ -248,8 +260,16 @@ pub enum Step {
     Exit(i32),
     /// End with exit code 0 and `text` on stdout.
     Stdout(String),
+    /// End with exit code `code` and `text` on stdout.
+    ExitWith(i32, String),
     /// Run until cancelled.
     Hang,
+    /// Post `text` through the core's API with the wake token.
+    Post(String),
+    /// Pass through the core's API.
+    Pass,
+    /// Set an ETA through the core's API.
+    Eta(String),
 }
 
 /// One call of [`FakeAdapter::run`].
@@ -265,12 +285,18 @@ pub struct Dispatch {
     pub triggers: Vec<EventId>,
     /// The virtual wall-clock time of the call.
     pub at: DateTime<Utc>,
+    /// The wake token the adapter received.
+    pub token: String,
+    /// The payload the adapter received.
+    pub payload: WakePayload,
 }
 
 #[derive(Default)]
 struct FakeAdapterState {
     scripts: VecDeque<Vec<Step>>,
     dispatches: Vec<Dispatch>,
+    cancelled: Vec<Uuid>,
+    api_responses: Vec<(Uuid, ApiResponse)>,
 }
 
 /// An [`Adapter`] that runs a script per wake and records every dispatch. Clones share state.
@@ -279,6 +305,7 @@ pub struct FakeAdapter {
     default_script: Vec<Step>,
     clock: Arc<dyn Clock>,
     state: Arc<Mutex<FakeAdapterState>>,
+    core: Arc<OnceLock<CoreHandle>>,
 }
 
 impl FakeAdapter {
@@ -288,7 +315,18 @@ impl FakeAdapter {
             default_script: script,
             clock: Arc::new(VirtualClock::new(base_time())),
             state: Arc::default(),
+            core: Arc::default(),
         }
+    }
+
+    /// The wakes whose run was cancelled, in order.
+    pub fn cancelled(&self) -> Vec<Uuid> {
+        self.state.lock().unwrap().cancelled.clone()
+    }
+
+    /// Every API answer a script step received, with its wake.
+    pub fn api_responses(&self) -> Vec<(Uuid, ApiResponse)> {
+        self.state.lock().unwrap().api_responses.clone()
     }
 
     /// Runs the next of `scripts` for each wake, then the default script.
@@ -311,7 +349,7 @@ impl Adapter for FakeAdapter {
     fn run(
         &self,
         ctx: WakeContext,
-        _payload: WakePayload,
+        payload: WakePayload,
         cancel: CancellationToken,
     ) -> BoxFuture<'static, AdapterEvent> {
         let script = {
@@ -322,20 +360,31 @@ impl Adapter for FakeAdapter {
                 root: ctx.root.clone(),
                 triggers: ctx.trigger_ids.clone(),
                 at: self.clock.now(),
+                token: ctx.token.clone(),
+                payload,
             });
             state
                 .scripts
                 .pop_front()
                 .unwrap_or_else(|| self.default_script.clone())
         };
+        let state = Arc::clone(&self.state);
+        let core = Arc::clone(&self.core);
+        let wake_id = ctx.wake_id;
+        let token = ctx.token;
         Box::pin(async move {
+            let cancelled = || {
+                state.lock().unwrap().cancelled.push(wake_id);
+                AdapterEvent::Failed("cancelled".into())
+            };
             for step in script {
-                match step {
+                let request = match step {
                     Step::Wait(duration) => {
                         tokio::select! {
                             () = tokio::time::sleep(duration) => {}
-                            () = cancel.cancelled() => return AdapterEvent::Failed("cancelled".into()),
+                            () = cancel.cancelled() => return cancelled(),
                         }
+                        continue;
                     }
                     Step::Exit(code) => {
                         return AdapterEvent::Exited {
@@ -349,11 +398,35 @@ impl Adapter for FakeAdapter {
                             stdout: Some(text),
                         }
                     }
+                    Step::ExitWith(code, text) => {
+                        return AdapterEvent::Exited {
+                            code: Some(code),
+                            stdout: Some(text),
+                        }
+                    }
                     Step::Hang => {
                         cancel.cancelled().await;
-                        return AdapterEvent::Failed("cancelled".into());
+                        return cancelled();
                     }
-                }
+                    Step::Post(text) => ApiRequest::Post {
+                        token: token.clone(),
+                        text,
+                    },
+                    Step::Pass => ApiRequest::Pass {
+                        token: token.clone(),
+                    },
+                    Step::Eta(text) => ApiRequest::Eta {
+                        token: token.clone(),
+                        text,
+                    },
+                };
+                let handle = core.get().cloned().unwrap();
+                let response = handle.api(request).await;
+                state
+                    .lock()
+                    .unwrap()
+                    .api_responses
+                    .push((wake_id, response));
             }
             AdapterEvent::Exited {
                 code: Some(0),
@@ -421,6 +494,52 @@ impl FakeRelay {
     pub fn on_publish(&self, hook: PublishHook) {
         self.lock().hook = Some(hook);
     }
+
+    /// The targets of every published kind-7 reaction with content `emoji`, in order.
+    pub fn reactions(&self, emoji: &str) -> Vec<nostr::EventId> {
+        self.published()
+            .iter()
+            .filter(|event| event.kind == Kind::Reaction && event.content == emoji)
+            .filter_map(|event| event.tags.event_ids().next().copied())
+            .collect()
+    }
+
+    /// Every published kind-20002 typing indicator.
+    pub fn typing(&self) -> Vec<Event> {
+        self.published()
+            .into_iter()
+            .filter(|event| event.kind == Kind::Custom(20002))
+            .collect()
+    }
+
+    /// Every published kind-9 event whose `buzz-router` tag has `marker` (`reply` or `status`).
+    pub fn messages(&self, marker: &str) -> Vec<Event> {
+        self.published()
+            .into_iter()
+            .filter(|event| {
+                event.kind == Kind::Custom(9) && router_marker(event) == Some(marker.to_owned())
+            })
+            .collect()
+    }
+}
+
+/// The third element of an event's `buzz-router` tag, if it has one.
+pub fn router_marker(event: &Event) -> Option<String> {
+    event.tags.iter().find_map(|tag| {
+        let parts = tag.as_slice();
+        (parts.first().map(String::as_str) == Some("buzz-router"))
+            .then(|| parts.get(2).cloned())
+            .flatten()
+    })
+}
+
+/// The reaction emojis the router uses.
+pub mod emoji {
+    pub const EYES: &str = "\u{1F440}";
+    pub const CHECK: &str = "\u{2705}";
+    pub const HOURGLASS: &str = "\u{231B}";
+    pub const WARNING: &str = "\u{26A0}\u{FE0F}";
+    pub const STOP: &str = "\u{1F6D1}";
 }
 
 impl RelayPort for FakeRelay {

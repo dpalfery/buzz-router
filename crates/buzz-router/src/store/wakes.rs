@@ -275,6 +275,21 @@ impl<'c> Wakes<'c> {
         Ok(counts)
     }
 
+    /// The latest `started_at` of `bot`'s wakes in the thread at `root_id`, other than `except`
+    /// (DD-17).
+    pub fn previous_start(
+        &self,
+        bot: &BotName,
+        root_id: &EventId,
+        except: &Uuid,
+    ) -> Result<Option<i64>, StoreError> {
+        Ok(self.conn.query_row(
+            "SELECT MAX(started_at) FROM wakes WHERE bot = ?1 AND root_id = ?2 AND id != ?3",
+            params![bot.as_str(), root_id.as_str(), except.to_string()],
+            |row| row.get(0),
+        )?)
+    }
+
     /// Wakes for `bot` started at or after `since_ms` (design section 9.3, assumption A10).
     pub fn count_started_since(&self, bot: &BotName, since_ms: i64) -> Result<u32, StoreError> {
         Ok(self.conn.query_row(
