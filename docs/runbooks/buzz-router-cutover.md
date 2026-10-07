@@ -106,6 +106,15 @@ status` reports Running again within about a minute — the task's
 every-minute trigger restarts it even when restart on failure does not
 fire.
 
+Stopping (Windows): ending the task or killing the process is not a
+lasting stop — the every-minute trigger brings the router back within
+about a minute. To stop it, uninstall or disable the `buzz-router` task
+first (`buzz-router service uninstall` also ends and deletes the task).
+A second `buzz-router run` against the same data directory exits 4 with
+`another buzz-router is already running ...` and leaves the running
+router's wakes alone, so a hand-started copy can never steal work from
+the scheduled one.
+
 ## 6. Smoke test (R63.7)
 
 David posts, for **each bot** on this machine:

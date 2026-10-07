@@ -2,7 +2,9 @@
 //!
 //! One process serves every local bot. Startup installs the rustls ring provider and logging,
 //! loads and validates the configuration (any error is a JSON line and exit 1, before anything
-//! listens), opens the store, ensures `admin.token`, loads each bot's key, then starts the core,
+//! listens), takes the single-instance lock on the data directory (a second `run` against the
+//! same data directory is a JSON line and exit 4, before anything is opened or recovered),
+//! opens the store, ensures `admin.token`, loads each bot's key, then starts the core,
 //! the API listeners and one synced relay connection per bot whose key loaded. A bot whose key
 //! does not load is reported unavailable and not served. The daemon exits 0 on ctrl-c or SIGTERM.
 
@@ -14,6 +16,7 @@ use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
+use fs2::FileExt;
 use router_core::config::{
     parse_router, roster_hash, KeySource as ConfigKeySource, Roster, RouterConfig,
 };
@@ -37,6 +40,8 @@ use crate::store::{self, Store};
 
 /// The router configuration file, in the config directory.
 const ROUTER_TOML: &str = "router.toml";
+/// The single-instance lock file, in the data directory (design 6.2 step 2b, review cycle 2 D).
+const LOCK_FILE: &str = "router.lock";
 /// How long spawned tasks get to finish after the core has shut down.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 
@@ -85,6 +90,43 @@ fn load_config(dirs: &Dirs) -> Result<Loaded, CliError> {
     })
 }
 
+/// An exclusive lock on the data directory's lock file, held for the daemon's whole run.
+/// Dropping it (or exiting) releases the OS file lock.
+struct InstanceLock {
+    _file: fs::File,
+}
+
+/// Takes the single-instance lock on `data_dir`/`LOCK_FILE` (design 6.2 step 2b). A second `run`
+/// against the same data directory gets an [`ErrorKind::Other`] (exit 4) error naming the
+/// directory, before the store is opened and long before recovery could touch another router's
+/// running wakes.
+fn acquire_lock(data_dir: &Path) -> Result<InstanceLock, CliError> {
+    let path = data_dir.join(LOCK_FILE);
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(&path)
+        .map_err(|error| CliError::other(format!("cannot open {}: {error}", path.display())))?;
+    match file.try_lock_exclusive() {
+        Ok(()) => Ok(InstanceLock { _file: file }),
+        Err(error) if is_lock_contention(&error) => Err(CliError::other(format!(
+            "another buzz-router is already running with data directory {}: stop it before starting a new one",
+            data_dir.display()
+        ))),
+        Err(error) => Err(CliError::other(format!(
+            "cannot lock {}: {error}",
+            path.display()
+        ))),
+    }
+}
+
+/// Whether `try_lock_exclusive` failed because another process holds the lock, rather than a
+/// real I/O error. Unix reports `WouldBlock`; Windows reports `ERROR_LOCK_VIOLATION` (33).
+fn is_lock_contention(error: &std::io::Error) -> bool {
+    error.kind() == std::io::ErrorKind::WouldBlock || error.raw_os_error() == Some(33)
+}
+
 /// Design 6.2 steps 3, 4 and 7, then waits for the shutdown signal.
 async fn serve(dirs: &Dirs, loaded: Loaded) -> Result<(), CliError> {
     let Loaded {
@@ -98,6 +140,12 @@ async fn serve(dirs: &Dirs, loaded: Loaded) -> Result<(), CliError> {
             dirs.data_dir.display()
         ))
     })?;
+    // A second `run` against the same data directory must exit before it touches the store:
+    // recovery would otherwise mark the first router's running wakes `interrupted` and re-queue
+    // them before this copy fails to bind the API port (notably via the Windows task's
+    // every-minute trigger racing a hand-started `run`). The lock is released when this process
+    // exits, so a crash never leaves a stale lock behind.
+    let _lock = acquire_lock(&dirs.data_dir)?;
     let db_path = dirs.data_dir.join(store::FILE_NAME);
     let open = |result: Result<Store, store::StoreError>| {
         result

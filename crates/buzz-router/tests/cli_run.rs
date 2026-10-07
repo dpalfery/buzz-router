@@ -99,3 +99,29 @@ async fn ctrl_c_exits_0() {
 
     assert_eq!(daemon.exit_code().await, Some(0));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_second_run_with_the_same_data_dir_exits_4_without_disturbing_the_first() {
+    let (sandbox, mut first, _) = started().await;
+    let api = sandbox.api();
+    let mut second = sandbox.spawn();
+
+    assert_eq!(second.exit_code().await, Some(4));
+    let stderr = second.stderr();
+    assert!(
+        stderr.contains("already running"),
+        "a second run must say another router is already running: {stderr}"
+    );
+    assert!(
+        listening(&api).await,
+        "the first daemon must still serve the API after the second run exits"
+    );
+
+    #[cfg(unix)]
+    {
+        first.signal(nix::sys::signal::Signal::SIGTERM);
+        assert_eq!(first.exit_code().await, Some(0));
+    }
+    #[cfg(not(unix))]
+    first.child.kill().await.unwrap();
+}

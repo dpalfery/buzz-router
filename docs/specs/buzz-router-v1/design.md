@@ -170,7 +170,7 @@ Requirements: 1, 2, 3, 22.3; assumptions A2, A3, A15.
 `buzz-router/src/paths.rs` resolves two directories with `directories::BaseDirs`:
 
 - `config_dir = BaseDirs::config_dir()/"buzz-router"`. That gives `~/Library/Application Support/buzz-router` on macOS, `~/.config/buzz-router` on Linux (honouring `XDG_CONFIG_HOME`), and `%APPDATA%\buzz-router` on Windows (R3.1–3.4).
-- `data_dir = BaseDirs::data_local_dir()/"buzz-router"`. That gives `~/Library/Application Support/buzz-router`, `~/.local/share/buzz-router`, and `%LOCALAPPDATA%\buzz-router` (DD-11). The data directory holds `state.sqlite3`, `admin.token`, `logs/`, and `wakes/<wake_id>/` scratch directories (R3.5).
+- `data_dir = BaseDirs::data_local_dir()/"buzz-router"`. That gives `~/Library/Application Support/buzz-router`, `~/.local/share/buzz-router`, and `%LOCALAPPDATA%\buzz-router` (DD-11). The data directory holds `state.sqlite3`, `admin.token`, `router.lock`, `logs/`, and `wakes/<wake_id>/` scratch directories (R3.5).
 - Hidden global flags `--config-dir` and `--data-dir`, and the env vars `BUZZ_ROUTER_CONFIG_DIR` and `BUZZ_ROUTER_DATA_DIR`, override both. They exist for tests and E2E only (DD-11).
 
 Configuration is read once at startup. Changes take effect on restart (A15).
@@ -601,7 +601,7 @@ Requirements: 1.15, 43.4, 48, 49; assumption A14.
 
 1. Install the rustls ring provider. Init logging (section 14). Resolve paths.
 2. Load and validate the roster and `router.toml`. **On any error, print a JSON error and exit 1** (R1.15).
-3. Open SQLite and migrate (section 9). Create `admin.token` if it's missing (R43.4).
+3. Take the single-instance lock on `data_dir/router.lock` (review cycle 2 D): an exclusive OS file lock, held for the whole run and released when the process exits, so a crash never leaves a stale lock. A second `run` against the same data directory fails here with an `Other` (exit 4) JSON error (`another buzz-router is already running ...`), before the store is opened and before recovery could mark the first router's running wakes `interrupted`. Then open SQLite and migrate (section 9). Create `admin.token` if it's missing (R43.4).
 4. Load each local bot's key (section 11). A bot whose key fails to load is marked `unavailable` in `status`, isn't connected, and doesn't stop the others (DD-23).
 5. **Load halts** (R48.1 step 1).
 6. **Recover interrupted wakes** (R49): for each `wakes` row in state `running`:
@@ -1194,6 +1194,7 @@ The router writes its own service definitions and drives the OS tools through `s
   - `Exec` = `<exe> run`.
 
   Then run `schtasks /Create /TN buzz-router /XML <file> /F` and `schtasks /Run /TN buzz-router`.
+- Only one router may run per data directory: `run` holds the `data_dir/router.lock` lock from section 6.2 step 3, and a second copy (a hand-started `run` racing the every-minute trigger, or vice versa) exits 4 before touching the store. Because the trigger restarts the router within about a minute, ending the task or killing the process is not a lasting stop: uninstall or disable the task to stop the router.
 - **Uninstall:** `schtasks /End` and `schtasks /Delete /TN buzz-router /F`.
 - **Status:** `schtasks /Query /TN buzz-router /FO LIST /V`.
 - Task 1 must confirm on `windows-latest` that a non-zero exit triggers `RestartOnFailure`.
