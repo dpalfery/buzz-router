@@ -19,7 +19,7 @@ use router_core::ids::{BotName, ChannelId, EventId};
 use router_core::payload::{
     format_deadline, turns_left_after_this, ApiRef, ChannelRef, ContextMessage, WakePayload,
 };
-use router_core::route::{Priority, KIND_MESSAGE};
+use router_core::route::{Control, Priority, KIND_MESSAGE};
 use router_core::thread::RoundMode;
 use sha2::{Digest, Sha256};
 use tokio::sync::{mpsc, oneshot};
@@ -81,6 +81,8 @@ pub enum ApiRequest {
         /// The estimate, such as `10 minutes`.
         text: String,
     },
+    /// `POST /v1/stop`, `/v1/resume` or `/v1/cancel`, already authorised by the admin token.
+    Control(Control),
 }
 
 /// The core's answer to an [`ApiRequest`].
@@ -342,6 +344,14 @@ impl Core {
             ApiRequest::Post { token, .. }
             | ApiRequest::Pass { token }
             | ApiRequest::Eta { token, .. } => token,
+            ApiRequest::Control(_) => {
+                return answer(
+                    reply,
+                    Err(ApiFailure::Internal(
+                        "control is not implemented".to_owned(),
+                    )),
+                )
+            }
         };
         let wake = match self.store.wakes().find_by_token_hash(&token_hash(token)) {
             Ok(Some(wake)) => wake,
@@ -372,6 +382,7 @@ impl Core {
                 running.eta = Some(text);
                 answer(reply, Ok(None));
             }
+            ApiRequest::Control(_) => {}
         }
     }
 

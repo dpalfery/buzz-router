@@ -77,6 +77,9 @@ getrandom = { workspace = true }
 command-group = { workspace = true }
 # The webhook adapter (task 5.1): request signing.
 hmac = { workspace = true }
+# The HTTP API (task 3.6): the routers and the constant-time admin-token check.
+axum = { workspace = true }
+subtle = { workspace = true }
 
 [dev-dependencies]
 sha2 = { workspace = true }
@@ -85,6 +88,9 @@ tempfile = { workspace = true }
 # axum serves the mock relay in tests (task 2.3).
 axum = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
+# The HTTP API tests (task 3.6).
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
 
 [lints]
 workspace = true

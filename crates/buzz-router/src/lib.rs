@@ -4,6 +4,7 @@
 //! target so that the integration tests under `tests/` can reach them.
 
 pub mod adapter;
+pub mod api;
 pub mod cli;
 pub mod clock;
 pub mod core;

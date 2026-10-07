@@ -833,7 +833,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
   - [x] GREEN
   - [x] REFACTOR
 
-- [ ] **3.6 HTTP API and admin token**
+- [x] **3.6 HTTP API and admin token**
   - **Objective:** Implement the loopback and tailnet routers, token and admin auth, the `/v1/post` precedence, the error bodies, body limits and the admin-token file.
   - **Files:** `crates/buzz-router/src/api/{mod.rs,token.rs,admin.rs,error.rs,admin_token.rs}`, and `crates/buzz-router/tests/{api.rs,engine_max_posts.rs}`. Dev-dependencies: `tower = { version = "0.5", features = ["util"] }` and `http-body-util = "0.1"`.
   - **Design:** §8, DD-22.
@@ -857,9 +857,9 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - `admin_token::ensure` creates 64 hex characters with mode 0600 on Unix, and doesn't overwrite an existing file.
     - *RED:* compile error, unresolved `buzz_router::api::loopback_router`.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 - [ ] **3.7 Control execution**
   - **Objective:** Execute stop, resume and cancel from Buzz messages and from the admin API, including halt rows, kills, queue drops, reactions and partial resume.
