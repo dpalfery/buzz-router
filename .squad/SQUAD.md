@@ -52,3 +52,7 @@ Everything you need is inside your worktree under .squad/ (you cannot read outsi
 - Landed: 2.1-2.4, 2.6, 2.8, 3.1, 3.2, 6.1, 6.2, AMEND.
 - opencode: 2.5 -> then 3.6 -> 3.9 (each only once its deps have landed on feat/buzz-router-v1: 3.6 and 3.9 need T3.4 from cursor; if not landed, stop and report).
 - pi: 2.7 (then stop).  cursor: 3.3 -> 3.4 (needs T2.7) -> 3.5 -> 3.7.
+
+## LANE UPDATE 4
+- Landed through: 2.1-2.4, 2.6-2.8, 3.1-3.5, 4.2, 5.1, 6.1, 6.2, AMEND.
+- cursor now owns 3.6 -> 3.7 -> 3.9 -> 3.8 -> 3.10 (was opencode's 3.6/3.9). opencode: 2.5 only, then 2.9 (Docker relay via scripts/e2e-relay.sh). pi: 4.4.
