@@ -4,6 +4,7 @@ description = "The buzz-router daemon and CLI: relay client, wake engine, adapte
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+publish = false
 license.workspace = true
 
 # The library target is `buzz_router` (src/lib.rs, holding every module). The binary

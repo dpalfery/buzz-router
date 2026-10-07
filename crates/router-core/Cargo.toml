@@ -4,6 +4,7 @@ description = "Pure routing logic for buzz-router: configuration, parsing, route
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+publish = false
 license.workspace = true
 
 # router-core is pure: no I/O and no tokio (R5.9). This is the complete dependency set from
