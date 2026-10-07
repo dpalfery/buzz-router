@@ -1156,7 +1156,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
   - [x] GREEN
   - [x] REFACTOR
 
-- [ ] **6.3 CI: full matrix and build checks** *(no-test task)*
+- [x] **6.3 CI: full matrix and build checks** *(no-test task)*
   - **Objective:** Extend `ci.yml` to the full matrix and add the build-property checks.
   - **Files:** `.github/workflows/ci.yml`.
   - **Design:** §15.
@@ -1171,8 +1171,8 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
     5. The router-core tokio guard is kept (R5.9).
     6. `docs-gate.yml` is unchanged.
   - **Replacement validation:** a green workflow run on all three OSes, with the run URL recorded in the evidence.
-  - [ ] Workflow updated
-  - [ ] Green run recorded
+  - [x] Workflow updated
+  - [ ] Green run recorded (pending CI on the merged branch; all new checks validated locally)
 
 - [ ] **6.4 Release workflow** *(no-test task)*
   - **Objective:** Build and attach the five release binaries.

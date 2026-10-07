@@ -43,6 +43,9 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked
 
+      - name: Release build
+        run: cargo build --release --locked -p buzz-router --bin buzz-router
+
       - name: Ensure router-core is tokio-free
         if: matrix.os == 'ubuntu-latest'
         shell: bash
@@ -55,3 +58,42 @@ jobs:
             exit 1
           fi
           echo "router-core is tokio-free."
+
+      - name: Ensure no openssl-sys dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$(cargo tree -p buzz-router -e normal -i openssl-sys 2>/dev/null || true)"
+          if [ -n "$out" ]; then
+            echo "buzz-router depends on openssl-sys, but TLS must be rustls-only (R58.2):" >&2
+            echo "$out" >&2
+            exit 1
+          fi
+          echo "no openssl-sys in buzz-router's normal dependency closure."
+
+      - name: Ensure SQLite is bundled
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$(cargo tree -p buzz-router -e features -i libsqlite3-sys 2>/dev/null || true)"
+          if ! printf '%s\n' "$out" | grep -q 'feature "bundled"'; then
+            echo "libsqlite3-sys is missing the bundled feature (R58.2):" >&2
+            echo "$out" >&2
+            exit 1
+          fi
+          echo "libsqlite3-sys is bundled."
+
+  msrv:
+    name: MSRV (1.88)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install Rust 1.88
+        run: rustup toolchain install 1.88 --profile minimal
+
+      - name: Check with Rust 1.88
+        run: cargo +1.88 check --workspace --locked
