@@ -10,7 +10,7 @@
 //! router's state matches a thread it never saw: nothing is published and no control is executed
 //! (A17).
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
 use buzz_sdk::builders::{build_reaction, extract_channel_id};
@@ -38,6 +38,7 @@ use super::{CoreMsg, DebugCounters, MissedMessage};
 use crate::adapter::Adapter;
 use crate::clock::Clock;
 use crate::ingest::{EnrichedEvent, Source};
+use crate::logging::LogLimiter;
 use crate::relay::RelayPort;
 use crate::store::events::{EventClass, EventRow, Events};
 use crate::store::halts::HaltScope;
@@ -131,9 +132,8 @@ pub(super) struct Core {
     pub(super) threads: ThreadCache,
     pub(super) counters: DebugCounters,
     pub(super) status_sources: StatusSources,
-    drift_logged: HashSet<Pubkey>,
-    /// When each bot last warned about an unmanaged post, in unix milliseconds (R51.2).
-    unmanaged_warned_at: HashMap<BotName, i64>,
+    /// Rate-limits the roster-drift and unmanaged-post warnings (R4.4, R51.2).
+    log_limiter: LogLimiter,
     pub(super) publishes: JoinSet<()>,
     pub(super) running: HashMap<Uuid, RunningWake>,
     /// The events that triggered recent wakes, for the payload context fallback.
@@ -173,8 +173,7 @@ impl Core {
             threads: ThreadCache::default(),
             counters: DebugCounters::default(),
             status_sources: parts.status_sources,
-            drift_logged: HashSet::new(),
-            unmanaged_warned_at: HashMap::new(),
+            log_limiter: LogLimiter::new(),
             publishes: JoinSet::new(),
             running: HashMap::new(),
             trigger_events: TriggerCache::default(),
@@ -535,7 +534,7 @@ impl Core {
         for diagnostic in &result.diagnostics {
             match diagnostic {
                 Diagnostic::RosterDrift { pubkey } => {
-                    if self.drift_logged.insert(pubkey.clone()) {
+                    if self.log_limiter.allow_once(&format!("drift:{pubkey}")) {
                         tracing::warn!(pubkey = %pubkey, "a bot outside the roster carries an auth tag from the owner; add it to the roster");
                     }
                 }
@@ -565,13 +564,10 @@ impl Core {
             Ok(false) => {
                 self.counters.unmanaged_posts += 1;
                 self.react(&bot, &ev.event.id, WARNING);
-                let now_ms = self.clock.now().timestamp_millis();
-                let due = self
-                    .unmanaged_warned_at
-                    .get(&bot)
-                    .is_none_or(|at| now_ms.saturating_sub(*at) >= HOUR_MS);
-                if due {
-                    self.unmanaged_warned_at.insert(bot.clone(), now_ms);
+                if self
+                    .log_limiter
+                    .allow_hourly(&format!("unmanaged:{bot}"), self.clock.now())
+                {
                     tracing::warn!(bot = %bot, event_id = %ev.in_event.id, "unmanaged post: the bot's key signed a post the router didn't publish");
                 }
             }
