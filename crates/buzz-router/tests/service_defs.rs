@@ -170,7 +170,9 @@ fn macos_install_writes_the_plist_then_bootstraps_it() {
 
     let plist = home
         .path()
-        .join("Library/LaunchAgents/com.buzz-router.plist");
+        .join("Library")
+        .join("LaunchAgents")
+        .join("com.buzz-router.plist");
     let logs = data.path().join("logs");
     assert_eq!(
         text(&plist),
@@ -211,7 +213,9 @@ fn macos_uninstall_boots_out_then_deletes_the_plist() {
     macos::install(&mut runner, Path::new(EXE), home.path(), data.path(), 501).unwrap();
     let plist = home
         .path()
-        .join("Library/LaunchAgents/com.buzz-router.plist");
+        .join("Library")
+        .join("LaunchAgents")
+        .join("com.buzz-router.plist");
 
     let mut runner = FakeRunner::default();
     macos::uninstall(&mut runner, home.path(), 501).unwrap();
@@ -276,7 +280,12 @@ fn linux_install_writes_the_unit_then_reloads_and_enables_it() {
 
     linux::install(&mut runner, Path::new(EXE), home.path()).unwrap();
 
-    let unit = home.path().join(".config/systemd/user/buzz-router.service");
+    let unit = home
+        .path()
+        .join(".config")
+        .join("systemd")
+        .join("user")
+        .join("buzz-router.service");
     assert_eq!(text(&unit), render_systemd_unit(EXE));
     assert_eq!(
         calls(&runner),
@@ -298,7 +307,12 @@ fn linux_uninstall_disables_deletes_and_reloads() {
     let home = tempfile::tempdir().unwrap();
     let mut runner = FakeRunner::default();
     linux::install(&mut runner, Path::new(EXE), home.path()).unwrap();
-    let unit = home.path().join(".config/systemd/user/buzz-router.service");
+    let unit = home
+        .path()
+        .join(".config")
+        .join("systemd")
+        .join("user")
+        .join("buzz-router.service");
 
     let mut runner = FakeRunner::default();
     linux::uninstall(&mut runner, home.path()).unwrap();
