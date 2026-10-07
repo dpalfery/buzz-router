@@ -24,9 +24,9 @@ last-reviewed: 2026-10-06
 |---|---|
 | Branch | `feat/buzz-router-v1` (pushed to origin) |
 | Pull request | [#1 (draft)](https://github.com/dpalfery/buzz-router/pull/1) |
-| Last task commit | `22dd879` (T1.11) |
-| Tests | 389 passed, 0 failed (`cargo test --workspace --locked`, macOS arm64). `clippy -D warnings` and `fmt --check` are clean. `router-core` is tokio-free. 59 conformance cases. |
-| CI | Rust CI skeleton (`.github/workflows/ci.yml`) exists plus Docs Gate. 3-OS green pending first CI run. |
+| Last task commit | `abc3065` (FIX cycle2 A; review-fix pass in progress, 8.2 open) |
+| Tests | 670 passed, 0 failed, 15 ignored (`cargo test --workspace --locked`, macOS arm64). `clippy -D warnings` and `fmt --check` are clean. `router-core` is tokio-free. 69 conformance fixtures (70 conformance tests including registration). The 15 ignored tests are the e2e suite, which runs only with `BUZZ_E2E=1` against the local relay via `scripts/e2e-relay.sh`. |
+| CI | `ci.yml` (fmt lint + 3-OS clippy/test/release-build + ubuntu tokio-free/openssl/bundled checks + 3-OS e2e with ubuntu required + MSRV 1.88) plus Docs Gate and `release.yml` (tag builds + publish). |
 
 | Milestone | Tasks | Status |
 |---|---|---|
