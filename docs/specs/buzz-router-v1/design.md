@@ -574,7 +574,7 @@ flowchart LR
   - `Adapter{wake_id, AdapterEvent}`
   - `PublishResult{..}`
   - `Api(ApiRequest, oneshot::Sender<ApiResponse>)`
-  - `Shutdown`
+  - `Shutdown(oneshot::Sender<()>)`, the graceful stop (section 6.9)
 
   **Test seam.** `core::spawn_core(CoreDeps) -> CoreHandle` starts the actor. `CoreDeps` carries the store, roster, router config, clock, per-bot `RelayPort`s and adapters. `CoreHandle` exposes:
   - `ingest(bot, nostr::Event, Source)`, which feeds an event through the ingest pipeline;
@@ -727,7 +727,7 @@ stateDiagram-v2
   running --> timeout: deadline
   running --> killed: stop/cancel
   running --> failed
-  running --> interrupted: found running at startup
+  running --> interrupted: found running at startup, or at shutdown
 ```
 
 **Dispatch** runs in R35.1's order:
@@ -840,6 +840,17 @@ All events are signed with the bot's `nostr::Keys` (R59.3). Publishing goes over
 
 **Halted bots:** the API returns 423 before any publish, and the core refuses to publish a reply or status note for a halted bot from any path: stdout or sync replies arriving after a halt are discarded (R30.5).
 
+### 6.9 Shutdown (`cli/run.rs`, `core/mod.rs`)
+
+Owner decision on review finding #7; the requirements say nothing about shutdown.
+
+On ctrl-c, SIGTERM or a service stop, `run` sends the core `Shutdown` and waits for its answer. The core then:
+
+1. For each running wake, triggers its `CancellationToken`, so the WakeRunner kills the agent as a stop or deadline does (section 7.1, step 6). It ends the wake exactly as startup recovery would (section 6.2, step 6): the row becomes `interrupted`, which revokes the token, the scratch directory is deleted, and an attempt-1 owner wake is re-queued as attempt 2, otherwise ⚠️ is reacted.
+2. Waits at most `SHUTDOWN_WAKE_GRACE` (5 s) for the WakeRunners and pending publishes to finish, then answers and stops. Afterwards the tokio runtime gets 2 s more to wind down before the process exits.
+
+The backstop is `kill_on_drop` on every command-adapter spawn. A WakeRunner still running when the runtime is dropped kills its child: on Unix through tokio's `kill_on_drop`, which reaches the group leader only; on Windows through the Job Object's kill-on-close, which also fires when the router process is terminated without a signal.
+
 ## 7. Adapters (`adapter/`)
 
 Requirements: 36.5, 36.6, 37, 38, 39; assumptions A6, A13.
@@ -876,7 +887,7 @@ Before calling `run`, the WakeRunner builds the payload:
    - `.env("BUZZ_ROUTER_URL", loopback_base)`, `.env("BUZZ_ROUTER_WAKE_TOKEN", token)`, `.env("BUZZ_ROUTER_PAYLOAD", payload_path)`, and `BUZZ_ROUTER_PROMPT_FILE` in file mode;
    - then **`.env_remove("BUZZ_PRIVATE_KEY")` last**, so neither the inherited nor the configured env can supply it (R37.2, R37.3);
    - stdin piped (stdin mode) or null; stdout piped; stderr piped.
-4. Spawn with `command_group::AsyncCommandGroup::group_spawn()`, getting an `AsyncGroupChild`. That is a process group on Unix and a Job Object on Windows (R37.1). Write `<pid>` to `wakes/<id>/pid` for the CLI fallback.
+4. Spawn with `command_group::AsyncCommandGroup::group().kill_on_drop(true).spawn()`, with `kill_on_drop(true)` on the tokio command as well, getting an `AsyncGroupChild`. That is a process group on Unix and a Job Object on Windows (R37.1). Dropping it kills the child (section 6.9). Write `<pid>` to `wakes/<id>/pid` for the CLI fallback.
 5. In stdin mode, write the prompt and drop stdin (R37.5). Read stdout into a buffer capped at 65 536 bytes, **draining and discarding the rest** so the child never blocks on a full pipe (R37.6). Forward stderr line by line to `tracing::info!` with `bot` and `wake_id` (R37.10).
 6. `select!` on the child exiting or `cancel.cancelled()`. On cancel, call `child.kill()`, which kills the whole group (`killpg` or `TerminateJobObject`), then `wait()`.
 7. Report `Exited{code, stdout: trimmed}` (stdout reply mode) or `Exited{code, None}` (api reply mode). The core applies the ending table in section 6.6 (R37.7–37.9).
@@ -1365,6 +1376,7 @@ Each R65 criterion has one test file:
 | `engine_max_posts.rs` | 65.7 | The 4th post returns 429. |
 | `engine_restart.rs` | 65.8 | A `running` row becomes `interrupted` and is re-queued once with owner triggers. |
 | `engine_unmanaged.rs` | 65.9 | A bot-signed event not in `posts` gets ⚠️. |
+| `engine_shutdown.rs` | section 6.9 | Uses the **real** command adapter, as `engine_stop_kill.rs` does. After a graceful shutdown, both pids are gone, the wake is `interrupted` rather than `running`, and it is re-queued as attempt 2. |
 
 Further engine tests cover:
 
@@ -1502,6 +1514,7 @@ The requirements assumptions A1–A18 still apply. These additional points arise
 | 6.6 Dispatch and lifecycle | 19.1, 19.4, 27, 34, 35, 36, 46 |
 | 6.7 Control execution | 30, 31, 32, 33 |
 | 6.8 Publishing | 35.5, 44, 45, 46.2, 46.3, 59.3 |
+| 6.9 Shutdown | 37.1, 49 (owner decision, review finding #7) |
 | 7 Adapters | 36.5, 36.6, 37, 38, 39, 40.5–40.8 |
 | 8 HTTP API | 27.3, 28, 38.3, 38.4, 42, 43 |
 | 9 SQLite store | 18.5, 30.2, 34.3, 47 |

@@ -3,8 +3,8 @@
 //! Each wake gets `data_dir/wakes/<id>/` holding `payload.json`, `prompt.txt` (file mode) and
 //! `pid`, all private to the operator and deleted when the run ends (DD-21). The child runs in
 //! its own process group (Unix) or Job Object (Windows), so cancelling kills everything it
-//! started. Its stdout is captured up to 64 KiB and drained past that, and its stderr goes to the
-//! log line by line.
+//! started, and dropping the run kills the child. Its stdout is captured up to 64 KiB and drained
+//! past that, and its stderr goes to the log line by line.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -171,8 +171,13 @@ async fn run_command(
     }
     command.env_remove(PRIVATE_KEY_VAR);
 
+    // The backstop if the runner is dropped (design 6.9). command-group applies its own
+    // `kill_on_drop` only to the Windows Job Object, so the Unix leader needs tokio's.
+    command.kill_on_drop(true);
     let mut child = command
-        .group_spawn()
+        .group()
+        .kill_on_drop(true)
+        .spawn()
         .map_err(io("cannot start the command"))?;
     if let Some(pid) = child.id() {
         if let Err(error) = write_private(&dir.join("pid"), format!("{pid}\n").as_bytes()) {

@@ -37,7 +37,7 @@ use crate::store::{self, Store};
 
 /// The router configuration file, in the config directory.
 const ROUTER_TOML: &str = "router.toml";
-/// How long spawned tasks get to finish after a shutdown signal.
+/// How long spawned tasks get to finish after the core has shut down.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 
 /// Runs the daemon until ctrl-c or SIGTERM.
@@ -189,7 +189,7 @@ async fn serve(dirs: &Dirs, loaded: Loaded) -> Result<(), CliError> {
 
     shutdown_signal().await;
     tracing::info!("shutting down");
-    core.shutdown();
+    core.shutdown().await;
     Ok(())
 }
 

@@ -20,7 +20,7 @@ mod status;
 mod timers;
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -34,7 +34,7 @@ use crate::adapter::{Adapter, AdapterEvent};
 use crate::clock::Clock;
 use crate::ingest::{EnrichedEvent, Ingest, IngestOutput, Source};
 use crate::relay::RelayPort;
-use crate::store::wakes::WakeState;
+use crate::store::wakes::{WakeRow, WakeState};
 use crate::store::Store;
 use dispatch::Purpose;
 
@@ -46,6 +46,8 @@ pub use status::{
 
 /// The longest the core actor sleeps between loop turns.
 const TICK: Duration = Duration::from_secs(1);
+/// How long a graceful shutdown waits for cancelled wakes' runners to kill their agents.
+pub const SHUTDOWN_WAKE_GRACE: Duration = Duration::from_secs(5);
 
 /// Everything the core needs (design section 6.1, test seam).
 pub struct CoreDeps {
@@ -136,8 +138,10 @@ pub(crate) enum CoreMsg {
     DebugCounters(oneshot::Sender<DebugCounters>),
     /// Reply with the status document, or why it couldn't be built.
     Status(oneshot::Sender<Result<Status, String>>),
-    /// Stop the actor.
-    Shutdown,
+    /// End the running wakes, wait for their runners, reply, then stop the actor.
+    Shutdown(oneshot::Sender<()>),
+    /// Stop the actor at once, leaving running wakes `running` as a crash would (tests only).
+    Abort,
 }
 
 /// A message to the ingest task.
@@ -229,9 +233,20 @@ impl CoreHandle {
             .map_err(ApiFailure::Internal)
     }
 
-    /// Stops the core actor.
-    pub fn shutdown(&self) {
-        let _ = self.core_tx.send(CoreMsg::Shutdown);
+    /// Stops the core gracefully (design 6.9): each running wake is cancelled and recorded
+    /// `interrupted`, then the core waits at most [`SHUTDOWN_WAKE_GRACE`] for the runners to kill
+    /// their agents. Resolves once the actor has stopped.
+    pub async fn shutdown(&self) {
+        let (tx, rx) = oneshot::channel();
+        if self.core_tx.send(CoreMsg::Shutdown(tx)).is_ok() {
+            let _ = rx.await;
+        }
+    }
+
+    /// Stops the core actor at once without ending its running wakes, as a crash would (tests
+    /// only).
+    pub fn abort(&self) {
+        let _ = self.core_tx.send(CoreMsg::Abort);
     }
 }
 
@@ -252,20 +267,18 @@ pub fn spawn_core(deps: CoreDeps) -> CoreHandle {
             memberships: deps.memberships,
             adapters: deps.adapters,
             status_sources: deps.status,
+            data_dir: deps.data_dir,
         },
         core_tx.clone(),
     );
-    core.recover(deps.data_dir.as_deref());
+    core.recover();
     tokio::spawn(run_core(core, core_rx));
     CoreHandle { ingest_tx, core_tx }
 }
 
 impl apply::Core {
-    /// Recovers the wakes a previous run left `running` (design 6.2 step 6, R49). Each becomes
-    /// `interrupted` and loses its scratch directory. An attempt-1 wake of a bot that isn't
-    /// halted, with an owner trigger and no post in its thread since it started, is re-queued as
-    /// attempt 2; any other gets ⚠️ on its reaction target.
-    fn recover(&mut self, data_dir: Option<&Path>) {
+    /// Recovers the wakes a previous run left `running` (design 6.2 step 6, R49).
+    fn recover(&mut self) {
         let running = match self.store.wakes().with_state(WakeState::Running) {
             Ok(running) => running,
             Err(error) => {
@@ -273,63 +286,99 @@ impl apply::Core {
                 return;
             }
         };
-        let now_ms = self.clock.now().timestamp_millis();
-        let halts = self.halts();
-        let outcome = serde_json::json!({ "posted": [], "detail": "interrupted" }).to_string();
         for wake in running {
-            if let Err(error) =
-                self.store
-                    .wakes()
-                    .finish(&wake.id, WakeState::Interrupted, now_ms, Some(&outcome))
-            {
-                tracing::warn!(%error, wake_id = %wake.id, "cannot mark a wake interrupted");
-                continue;
+            self.interrupt(&wake);
+        }
+    }
+
+    /// Ends `wake`, found `running` at startup or at a graceful shutdown, as `interrupted` and
+    /// deletes its scratch directory (design 6.2 step 6, R49). An attempt-1 wake of a bot that
+    /// isn't halted, with an owner trigger and no post in its thread since it started, is
+    /// re-queued as attempt 2; any other gets ⚠️ on its reaction target.
+    fn interrupt(&mut self, wake: &WakeRow) {
+        let now_ms = self.clock.now().timestamp_millis();
+        let outcome = serde_json::json!({ "posted": [], "detail": "interrupted" }).to_string();
+        if let Err(error) =
+            self.store
+                .wakes()
+                .finish(&wake.id, WakeState::Interrupted, now_ms, Some(&outcome))
+        {
+            tracing::warn!(%error, wake_id = %wake.id, "cannot mark a wake interrupted");
+            return;
+        }
+        if let Some(data_dir) = &self.data_dir {
+            let scratch = data_dir.join("wakes").join(wake.id.to_string());
+            match std::fs::remove_dir_all(&scratch) {
+                Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                    tracing::warn!(%error, wake_id = %wake.id, "cannot delete a wake's scratch directory");
+                }
+                _ => {}
             }
-            if let Some(data_dir) = data_dir {
-                let scratch = data_dir.join("wakes").join(wake.id.to_string());
-                match std::fs::remove_dir_all(&scratch) {
-                    Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
-                        tracing::warn!(%error, wake_id = %wake.id, "cannot delete a wake's scratch directory");
-                    }
-                    _ => {}
+        }
+        let triggers = queue::decode(&wake.triggers).unwrap_or_else(|error| {
+            tracing::warn!(%error, wake_id = %wake.id, "cannot read an interrupted wake's triggers");
+            Vec::new()
+        });
+        let halted = self
+            .halts()
+            .as_ref()
+            .map_or(true, |halts| halts.all || halts.bots.contains(&wake.bot));
+        let owner = triggers.iter().any(|trigger| trigger.class == "owner");
+        let posted = wake.started_at.map_or(Ok(false), |started_ms| {
+            self.store.posts().posted_in_thread_since(
+                &wake.bot,
+                &wake.root_id,
+                started_ms.div_euclid(1_000),
+            )
+        });
+        let posted = posted.unwrap_or_else(|error| {
+            tracing::warn!(%error, wake_id = %wake.id, "cannot check an interrupted wake's posts");
+            true
+        });
+        if wake.attempt == 1 && !halted && owner && !posted {
+            match queue::requeue(self.store.connection(), wake, now_ms) {
+                Ok(()) => {
+                    tracing::info!(bot = %wake.bot, wake_id = %wake.id, "re-queued an interrupted wake")
+                }
+                Err(error) => {
+                    tracing::warn!(%error, wake_id = %wake.id, "cannot re-queue an interrupted wake")
                 }
             }
-            let triggers = queue::decode(&wake.triggers).unwrap_or_else(|error| {
-                tracing::warn!(%error, wake_id = %wake.id, "cannot read an interrupted wake's triggers");
-                Vec::new()
-            });
-            let halted = halts
-                .as_ref()
-                .map_or(true, |halts| halts.all || halts.bots.contains(&wake.bot));
-            let owner = triggers.iter().any(|trigger| trigger.class == "owner");
-            let posted = wake.started_at.map_or(Ok(false), |started_ms| {
-                self.store.posts().posted_in_thread_since(
-                    &wake.bot,
-                    &wake.root_id,
-                    started_ms.div_euclid(1_000),
-                )
-            });
-            let posted = posted.unwrap_or_else(|error| {
-                tracing::warn!(%error, wake_id = %wake.id, "cannot check an interrupted wake's posts");
-                true
-            });
-            if wake.attempt == 1 && !halted && owner && !posted {
-                match queue::requeue(self.store.connection(), &wake, now_ms) {
-                    Ok(()) => {
-                        tracing::info!(bot = %wake.bot, wake_id = %wake.id, "re-queued an interrupted wake")
-                    }
-                    Err(error) => {
-                        tracing::warn!(%error, wake_id = %wake.id, "cannot re-queue an interrupted wake")
-                    }
-                }
+            return;
+        }
+        tracing::warn!(bot = %wake.bot, wake_id = %wake.id, "a wake was interrupted by a restart");
+        let target = dispatch::reaction_target(&triggers)
+            .and_then(|target| nostr::EventId::from_hex(target.as_str()).ok());
+        if let Some(target) = target {
+            self.react(&wake.bot, &target, dispatch::WARNING);
+        }
+    }
+
+    /// The graceful shutdown (design 6.9): cancels every running wake's runner, which kills the
+    /// agent's process group, and ends the wake as [`Core::interrupt`] does, revoking its token.
+    /// Then waits at most [`SHUTDOWN_WAKE_GRACE`] for the runners and the publishes to finish.
+    async fn shut_down(&mut self) {
+        let wake_ids: Vec<Uuid> = self.running.keys().copied().collect();
+        for wake_id in wake_ids {
+            let Some(running) = self.running.remove(&wake_id) else {
                 continue;
+            };
+            running.cancel.cancel();
+            match self.store.wakes().get(&wake_id) {
+                Ok(Some(wake)) => self.interrupt(&wake),
+                Ok(None) => {}
+                Err(error) => {
+                    tracing::warn!(%error, wake_id = %wake_id, "cannot read a wake to end it at shutdown");
+                }
             }
-            tracing::warn!(bot = %wake.bot, wake_id = %wake.id, "a wake was interrupted by a restart");
-            let target = dispatch::reaction_target(&triggers)
-                .and_then(|target| nostr::EventId::from_hex(target.as_str()).ok());
-            if let Some(target) = target {
-                self.react(&wake.bot, &target, dispatch::WARNING);
-            }
+        }
+        let drained = tokio::time::timeout(SHUTDOWN_WAKE_GRACE, async {
+            while self.runners.join_next().await.is_some() {}
+            while self.publishes.join_next().await.is_some() {}
+        })
+        .await;
+        if drained.is_err() {
+            tracing::warn!("wakes still running after the shutdown grace; dropping them");
         }
     }
 }
@@ -369,7 +418,12 @@ async fn run_core(mut core: apply::Core, mut rx: mpsc::UnboundedReceiver<CoreMsg
         let wait = core.next_due_in(TICK);
         tokio::select! {
             message = rx.recv() => match message {
-                None | Some(CoreMsg::Shutdown) => break,
+                None | Some(CoreMsg::Abort) => break,
+                Some(CoreMsg::Shutdown(reply)) => {
+                    core.shut_down().await;
+                    let _ = reply.send(());
+                    break;
+                }
                 Some(message) => core.handle(message).await,
             },
             () = tokio::time::sleep(wait) => {}

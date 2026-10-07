@@ -80,7 +80,7 @@ impl Run {
     }
 
     fn stop(self) {
-        self.core.shutdown();
+        self.core.abort();
     }
 }
 

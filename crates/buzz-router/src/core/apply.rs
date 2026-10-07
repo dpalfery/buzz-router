@@ -11,6 +11,7 @@
 //! (A17).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use buzz_sdk::builders::{build_reaction, extract_channel_id};
@@ -135,12 +136,16 @@ pub(super) struct Core {
     /// Rate-limits the roster-drift and unmanaged-post warnings (R4.4, R51.2).
     log_limiter: LogLimiter,
     pub(super) publishes: JoinSet<()>,
+    /// Each running wake's adapter task, so a shutdown can wait for them (design 6.9).
+    pub(super) runners: JoinSet<()>,
     pub(super) running: HashMap<Uuid, RunningWake>,
     /// The events that triggered recent wakes, for the payload context fallback.
     pub(super) trigger_events: TriggerCache,
     /// When the core received each thread's latest roster-bot post, in unix milliseconds.
     last_bot_post: HashMap<EventId, i64>,
     pub(super) self_tx: mpsc::UnboundedSender<CoreMsg>,
+    /// The data directory holding the wakes' scratch directories.
+    pub(super) data_dir: Option<PathBuf>,
 }
 
 /// What the core actor is built from, besides its own sender.
@@ -154,6 +159,7 @@ pub(super) struct CoreParts {
     pub memberships: BTreeMap<BotName, BTreeSet<ChannelId>>,
     pub adapters: BTreeMap<BotName, Arc<dyn Adapter>>,
     pub status_sources: StatusSources,
+    pub data_dir: Option<PathBuf>,
 }
 
 impl Core {
@@ -175,16 +181,19 @@ impl Core {
             status_sources: parts.status_sources,
             log_limiter: LogLimiter::new(),
             publishes: JoinSet::new(),
+            runners: JoinSet::new(),
             running: HashMap::new(),
             trigger_events: TriggerCache::default(),
             last_bot_post: HashMap::new(),
             self_tx,
+            data_dir: parts.data_dir,
         }
     }
 
     /// Handles one message, then schedules the queue.
     pub(super) async fn handle(&mut self, message: CoreMsg) {
         while self.publishes.try_join_next().is_some() {}
+        while self.runners.try_join_next().is_some() {}
         match message {
             CoreMsg::Enriched(event) => self.apply_event(&event),
             CoreMsg::RebuildThread { root, events } => self.rebuild(&root, events),
@@ -221,7 +230,7 @@ impl Core {
                 let _ = reply.send(self.status().map_err(|error| error.to_string()));
                 return;
             }
-            CoreMsg::Shutdown => return,
+            CoreMsg::Shutdown(_) | CoreMsg::Abort => return,
         }
         self.schedule();
     }

@@ -311,7 +311,7 @@ async fn halts_survive_reopening_the_store() {
     let path = tempfile::tempdir().unwrap().keep().join("state.sqlite3");
     let mut first = Engine::new(Some(path.clone()));
     let stop = first.owner("@A stop").await;
-    first.core.shutdown();
+    first.core.abort();
 
     let reopened = Store::open(&path).unwrap();
     let halts = reopened.halts().list().unwrap();

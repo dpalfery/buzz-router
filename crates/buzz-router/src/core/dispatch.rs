@@ -24,6 +24,7 @@ use router_core::route::{Control, Priority, KIND_MESSAGE};
 use router_core::thread::RoundMode;
 use sha2::{Digest, Sha256};
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -368,6 +369,7 @@ impl Core {
         );
         self.send_typing(&wake.id);
         spawn_runner(
+            &mut self.runners,
             &adapter,
             ctx,
             payload,
@@ -811,6 +813,7 @@ impl ContextSource {
 
 /// Builds the payload context, then runs the adapter in its own task and reports the result.
 fn spawn_runner(
+    runners: &mut JoinSet<()>,
     adapter: &Arc<dyn Adapter>,
     ctx: WakeContext,
     mut payload: WakePayload,
@@ -820,7 +823,7 @@ fn spawn_runner(
 ) {
     let adapter = Arc::clone(adapter);
     let wake_id = ctx.wake_id;
-    tokio::spawn(async move {
+    runners.spawn(async move {
         payload.context = context.build().await;
         let event = adapter.run(ctx, payload, cancel).await;
         let _ = core_tx.send(CoreMsg::WakeEnded { wake_id, event });
