@@ -11,12 +11,37 @@
 //!   cargo test -p buzz-router --test e2e_stop -- --test-threads=1
 //! ```
 
+#![allow(
+    clippy::expect_used,
+    reason = "helpers in a test file fail the test by panicking; clippy.toml exempts only #[test] functions"
+)]
+
 mod e2e_support;
 mod support;
 
 use std::time::Duration;
 
 use e2e_support::{E2e, BOTS, EYES, RESUME, STOP};
+
+/// How many wake rows bot `name` has in SQLite.
+async fn wake_rows(e2e: &E2e, name: &str) -> usize {
+    let output = e2e.cli(&["wakes", "--bot", name]).await;
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    String::from_utf8(output.stdout)
+        .expect("wakes prints UTF-8")
+        .lines()
+        .filter(|line| !line.is_empty())
+        .count()
+}
+
+/// Whether bot `name` has reacted to `target` with `emoji`.
+async fn has_reaction(e2e: &E2e, name: &str, target: &nostr::Event, emoji: &str) -> bool {
+    let author = e2e.bot(name).public_key();
+    e2e.reactions(target)
+        .await
+        .iter()
+        .any(|reaction| reaction.pubkey == author && reaction.content == emoji)
+}
 
 /// The agent pids the router currently tracks under `<data>/wakes/*/pid`.
 fn agent_pids(e2e: &E2e) -> Vec<u32> {
@@ -75,12 +100,22 @@ async fn stop_kills_every_wake_and_the_halt_survives_a_restart() {
         e2e.wait_reaction(name, &stop, STOP).await;
     }
 
-    // Nothing is published afterwards: the killed agents never post.
+    // Nothing is dispatched afterwards: no new wake row appears for any
+    // bot. (The killed agents never post, so "no reply" would pass even if
+    // the halt were broken.)
+    let rows_before: Vec<usize> = {
+        let mut counts = Vec::new();
+        for name in BOTS {
+            counts.push(wake_rows(&e2e, name).await);
+        }
+        counts
+    };
     tokio::time::sleep(Duration::from_secs(10)).await;
-    for name in BOTS {
-        assert!(
-            e2e.replies(name, &busy).await.is_empty(),
-            "{name} publishes nothing after the stop"
+    for (name, before) in BOTS.iter().zip(&rows_before) {
+        assert_eq!(
+            wake_rows(&e2e, name).await,
+            *before,
+            "{name} dispatches no new wake after the stop"
         );
     }
 
@@ -88,9 +123,17 @@ async fn stop_kills_every_wake_and_the_halt_survives_a_restart() {
     e2e.restart().await;
     e2e.wait_all_connected().await;
     let halted = e2e.owner_post("@A are you there").await;
+    let halted_rows_before = wake_rows(&e2e, "A").await;
     tokio::time::sleep(Duration::from_secs(10)).await;
+    // A would react 👀 within 5 s of a wake start and gain a wake row, long
+    // before its 30 s agent could reply: either proves the halt held.
     assert!(
-        e2e.replies("A", &halted).await.is_empty(),
+        !has_reaction(&e2e, "A", &halted, EYES).await,
+        "A starts no wake while halted"
+    );
+    assert_eq!(
+        wake_rows(&e2e, "A").await,
+        halted_rows_before,
         "A stays halted after the restart"
     );
     let status = e2e.status().await;
@@ -108,7 +151,10 @@ async fn stop_kills_every_wake_and_the_halt_survives_a_restart() {
         e2e.wait_reaction(name, &resume, RESUME).await;
     }
     let ping = e2e.owner_post("@A ping after resume").await;
-    let replies = e2e.wait_replies("A", &ping, 1).await;
+    // The agent sleeps 30 s before replying, so allow 60 s.
+    let replies = e2e
+        .wait_replies_within("A", &ping, 1, Duration::from_secs(60))
+        .await;
     assert_eq!(replies.len(), 1, "A routes normally after resume");
 
     e2e.stop().await;
