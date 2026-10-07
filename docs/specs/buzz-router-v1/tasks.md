@@ -1215,7 +1215,7 @@ All tasks here are **[Docker + local Buzz relay]**. They are acceptance verifica
   - [x] GREEN
   - [x] REFACTOR
 
-- [ ] **7.2 E1 and E4 [Docker + local Buzz relay]**
+- [x] **7.2 E1 and E4 [Docker + local Buzz relay]**
   - **Objective:** Automate acceptance scenarios E1 and E4.
   - **Files:** `crates/buzz-router/tests/{e2e_thread_reply.rs,e2e_status_note.rs}`.
   - **Design:** §16.4.
@@ -1230,9 +1230,9 @@ All tasks here are **[Docker + local Buzz relay]**. They are acceptance verifica
       - **E4:** O posts "@A" with a 60 s task. 👀 appears immediately, one status note at about 20 s, and the final reply is threaded under O's message.
     - *RED:* the scenario files don't exist yet.
     - *GREEN:* both pass.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 - [ ] **7.3 E2 and E3 [Docker + local Buzz relay]**
   - **Objective:** Automate acceptance scenarios E2 and E3.
