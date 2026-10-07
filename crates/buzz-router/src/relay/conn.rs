@@ -62,14 +62,17 @@ fn base_delay(rung: u32) -> Duration {
     LADDER[rung.min(6) as usize]
 }
 
-/// The rung for the next wait: the ladder resets after 60 s of stable
-/// connection, otherwise it climbs one rung (capped at the 60 s rung).
-fn next_rung(rung: u32, stable_for: Duration) -> u32 {
-    if stable_for >= STABLE_RESET_AFTER {
+/// The base delay before redialling after a drop, and the rung for the drop
+/// after that. A connection stable for 60 s resets the ladder before the
+/// delay is chosen, so its drop waits the first rung; otherwise the ladder
+/// climbs one rung (capped at the 60 s rung).
+fn wait_after_drop(rung: u32, stable_for: Duration) -> (Duration, u32) {
+    let rung = if stable_for >= STABLE_RESET_AFTER {
         0
     } else {
-        (rung + 1).min(6)
-    }
+        rung
+    };
+    (base_delay(rung), (rung + 1).min(6))
 }
 
 /// Whether a dial failure message is a DNS resolution failure, mirroring
@@ -244,8 +247,8 @@ async fn run_loop(task: Task, inner: Arc<Inner>, mut cmds: mpsc::UnboundedReceiv
             None => return,
             Some(Outcome::Dns) => tokio::time::sleep(DNS_RETRY_DELAY).await,
             Some(Outcome::Down { stable_for }) => {
-                let delay = base_delay(rung);
-                rung = next_rung(rung, stable_for);
+                let (delay, next) = wait_after_drop(rung, stable_for);
+                rung = next;
                 tokio::time::sleep(jittered(delay)).await;
             }
         }
@@ -866,25 +869,40 @@ mod tests {
 
     use std::time::Duration;
 
-    use super::{base_delay, is_dns_error, next_rung};
+    use super::{base_delay, is_dns_error, wait_after_drop};
+
+    #[test]
+    fn a_drop_after_a_stable_minute_waits_the_first_rung() {
+        assert_eq!(
+            wait_after_drop(6, Duration::from_secs(3600)),
+            (Duration::from_secs(1), 1)
+        );
+        assert_eq!(
+            wait_after_drop(3, Duration::from_secs(60)),
+            (Duration::from_secs(1), 1)
+        );
+    }
+
+    #[test]
+    fn a_drop_before_a_stable_minute_waits_the_current_rung() {
+        assert_eq!(
+            wait_after_drop(0, Duration::ZERO),
+            (Duration::from_secs(1), 1)
+        );
+        assert_eq!(
+            wait_after_drop(2, Duration::from_secs(59)),
+            (Duration::from_secs(4), 3)
+        );
+        assert_eq!(
+            wait_after_drop(6, Duration::ZERO),
+            (Duration::from_secs(60), 6)
+        );
+    }
 
     #[test]
     fn the_ladder_is_1_2_4_8_16_32_then_60_seconds() {
         let bases: Vec<u64> = (0..8).map(|rung| base_delay(rung).as_secs()).collect();
         assert_eq!(bases, [1, 2, 4, 8, 16, 32, 60, 60]);
-    }
-
-    #[test]
-    fn the_ladder_resets_after_sixty_seconds_stable() {
-        assert_eq!(next_rung(4, Duration::from_secs(60)), 0);
-        assert_eq!(next_rung(6, Duration::from_secs(3600)), 0);
-    }
-
-    #[test]
-    fn short_connections_keep_climbing_the_ladder() {
-        assert_eq!(next_rung(0, Duration::ZERO), 1);
-        assert_eq!(next_rung(5, Duration::from_secs(59)), 6);
-        assert_eq!(next_rung(6, Duration::ZERO), 6);
     }
 
     #[test]
