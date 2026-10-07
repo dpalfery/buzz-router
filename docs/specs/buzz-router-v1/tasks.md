@@ -524,9 +524,9 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - A missing file gives `KeyError::Io`.
     - *RED:* compile error, unresolved `buzz_router::keys::load_key`.
     - *GREEN:* passes on all three OSes (the permission cases are `cfg(unix)`).
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 - [ ] **2.3 Relay REST client and `RelayPort`**
   - **Objective:** Implement `RestClient` (NIP-98, `x-auth-tag`, retries, paging, `submit_event`) and define the `RelayPort` trait.
