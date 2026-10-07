@@ -1,12 +1,12 @@
 //! One WebSocket connection task per bot (design sections 10.1 and 10.5,
 //! requirement R61.1).
 //!
-//! [`spawn_connection`] starts a task that dials the relay, answers the
-//! `AUTH` challenge ([`auth::build_auth_event`]), reports Up, publishes
-//! events with `OK` tracking, answers pings, and redials on the backoff
-//! ladder when the socket drops. Messages the relay sends on its own
-//! (`EVENT`, `EOSE`, notices) are ignored here; subscription and backfill
-//! wire them up in task 2.5.
+//! A connection task dials the relay, answers the `AUTH` challenge
+//! ([`auth::build_auth_event`]), reports Up, publishes events with `OK`
+//! tracking, answers pings, and redials on the backoff ladder when the socket
+//! drops. [`spawn_synced_connection`] also discovers, subscribes, backfills
+//! and delivers events; [`spawn_connection`] runs the same loop with syncing
+//! switched off, ignoring what the relay sends on its own.
 //!
 //! Reconnect follows `buzz-acp`'s `wait_for_reconnect`: the ladder is 1, 2,
 //! 4, 8, 16 and 32 s, then 60 s, each with ±20% jitter, resetting after
@@ -189,8 +189,25 @@ impl Connection {
     }
 }
 
-/// Starts the connection task for `params` and returns its handle.
+/// Starts a connection task for `params` with syncing switched off: no
+/// discovery, subscription, backfill or delivery. Returns its handle.
 pub fn spawn_connection(params: ConnParams) -> Connection {
+    spawn(Task {
+        conn: params,
+        sync: None,
+    })
+}
+
+/// What one connection task serves.
+struct Task {
+    /// How to connect and authenticate.
+    conn: ConnParams,
+    /// Discovery, subscription, backfill and delivery, when switched on.
+    sync: Option<SyncState>,
+}
+
+/// Starts the connection task for `task` and returns its handle.
+fn spawn(task: Task) -> Connection {
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
     let inner = Arc::new(Inner {
         cmd: cmd_tx,
@@ -198,10 +215,10 @@ pub fn spawn_connection(params: ConnParams) -> Connection {
         up: AtomicBool::new(false),
         connected: AtomicBool::new(false),
         attempts: AtomicU64::new(0),
-        publish_timeout: params.publish_timeout,
+        publish_timeout: task.conn.publish_timeout,
     });
     let task_inner = inner.clone();
-    tokio::spawn(async move { run_loop(params, task_inner, cmd_rx).await });
+    tokio::spawn(async move { run_loop(task, task_inner, cmd_rx).await });
     Connection { inner }
 }
 
@@ -217,16 +234,13 @@ enum Outcome {
     },
 }
 
-/// Dials forever, serving one connection per attempt.
-async fn run_loop(
-    params: ConnParams,
-    inner: Arc<Inner>,
-    mut cmds: mpsc::UnboundedReceiver<ConnCmd>,
-) {
+/// Dials forever, serving (and, when synced, syncing) one connection per
+/// attempt.
+async fn run_loop(task: Task, inner: Arc<Inner>, mut cmds: mpsc::UnboundedReceiver<ConnCmd>) {
     let mut rung = 0;
     loop {
         inner.attempts.fetch_add(1, Ordering::SeqCst);
-        match dial_and_serve(&params, &inner, &mut cmds).await {
+        match dial_and_serve(&task, &inner, &mut cmds).await {
             None => return,
             Some(Outcome::Dns) => tokio::time::sleep(DNS_RETRY_DELAY).await,
             Some(Outcome::Down { stable_for }) => {
@@ -238,13 +252,14 @@ async fn run_loop(
     }
 }
 
-/// Dials once and serves the connection until it drops. Returns `None` when
-/// every handle is gone and the task should end.
+/// Dials once, syncs when synced, and serves the connection until it drops.
+/// Returns `None` when every handle is gone and the task should end.
 async fn dial_and_serve(
-    params: &ConnParams,
+    task: &Task,
     inner: &Inner,
     cmds: &mut mpsc::UnboundedReceiver<ConnCmd>,
 ) -> Option<Outcome> {
+    let params = &task.conn;
     let connected = match tokio::time::timeout(
         DIAL_TIMEOUT,
         tokio_tungstenite::connect_async(&params.relay_url),
@@ -272,7 +287,10 @@ async fn dial_and_serve(
     inner.connected.store(true, Ordering::SeqCst);
     inner.notify_up.notify_waiters();
     let mut pending: HashMap<String, oneshot::Sender<Result<(), RelayError>>> = HashMap::new();
-    serve(&mut sink, &mut stream, cmds, &mut pending).await;
+    match &task.sync {
+        None => serve_stream(None, &mut sink, &mut stream, cmds, &mut pending).await,
+        Some(state) => sync_and_serve(state, &mut sink, &mut stream, cmds, &mut pending).await,
+    }
     inner.connected.store(false, Ordering::SeqCst);
     for (_, reply) in pending {
         let _ = reply.send(Err(RelayError::Transport(
@@ -365,66 +383,8 @@ where
     }
 }
 
-/// Serves an authenticated connection: answers pings, resolves publish
-/// `OK`s, and forwards publish commands. Ends when the socket drops.
-async fn serve<Sink, Stream>(
-    sink: &mut Sink,
-    stream: &mut Stream,
-    cmds: &mut mpsc::UnboundedReceiver<ConnCmd>,
-    pending: &mut HashMap<String, oneshot::Sender<Result<(), RelayError>>>,
-) -> ()
-where
-    Sink: futures_util::Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
-    Stream:
-        futures_util::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
-{
-    loop {
-        tokio::select! {
-            incoming = stream.next() => {
-                match incoming {
-                    Some(Ok(Message::Text(text))) => {
-                        handle_text(&text, pending);
-                    }
-                    Some(Ok(Message::Ping(payload))) => {
-                        if sink.send(Message::Pong(payload)).await.is_err() {
-                            return;
-                        }
-                    }
-                    Some(Ok(_)) => {}
-                    Some(Err(_)) | None => return,
-                }
-            }
-            cmd = cmds.recv() => {
-                match cmd {
-                    Some(ConnCmd::Publish { event, reply }) => {
-                        let id = event.id.to_hex();
-                        let text = match serde_json::to_string(&serde_json::json!(["EVENT", event])) {
-                            Ok(text) => text,
-                            Err(error) => {
-                                let _ = reply.send(Err(RelayError::Decode(format!("event serialize error: {error}"))));
-                                continue;
-                            }
-                        };
-                        if sink.send(Message::Text(text.into())).await.is_err() {
-                            let _ = reply.send(Err(RelayError::Transport(
-                                "the relay connection closed before answering".to_string(),
-                            )));
-                            return;
-                        }
-                        pending.insert(id, reply);
-                    }
-                    Some(ConnCmd::Cancel { id }) => {
-                        pending.remove(&id);
-                    }
-                    None => return,
-                }
-            }
-        }
-    }
-}
-
-/// Handles one text message on an authenticated connection: only `OK`s matter
-/// here. Anything else (live events, notices) waits for task 2.5.
+/// Resolves a pending publish when `text` is its `OK`. Anything else (live
+/// events, notices) is left to the caller.
 fn handle_text(text: &str, pending: &mut HashMap<String, oneshot::Sender<Result<(), RelayError>>>) {
     let value: serde_json::Value = match serde_json::from_str(text) {
         Ok(value) => value,
@@ -500,18 +460,20 @@ pub struct SyncParams {
 /// 7). The returned handle is the same
 /// [`Connection`]: `wait_up`, `publish` and `attempts` all work.
 pub fn spawn_synced_connection(params: SyncParams) -> Connection {
-    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-    let inner = Arc::new(Inner {
-        cmd: cmd_tx,
-        notify_up: Notify::new(),
-        up: AtomicBool::new(false),
-        connected: AtomicBool::new(false),
-        attempts: AtomicU64::new(0),
-        publish_timeout: params.conn.publish_timeout,
-    });
-    let task_inner = inner.clone();
-    tokio::spawn(async move { run_loop_synced(params, task_inner, cmd_rx).await });
-    Connection { inner }
+    let sync = SyncState {
+        relay_url: params.conn.relay_url.clone(),
+        bot_pubkey_hex: params.conn.keys.public_key().to_hex(),
+        rest: params.rest,
+        store: std::sync::Mutex::new(params.store),
+        bot: params.bot,
+        sink: params.sink,
+        core: params.core,
+        membership_tap: params.membership_tap,
+    };
+    spawn(Task {
+        conn: params.conn,
+        sync: Some(sync),
+    })
 }
 
 /// Whether the sync skips backfill or runs it from a `since` time.
@@ -526,8 +488,10 @@ enum BackfillPlan {
 /// is `Send` but not `Sync`, so the task locks it only for brief cursor
 /// reads and never holds the guard across an await.
 struct SyncState {
-    /// How to connect and authenticate. The relay URL is also the cursor key.
-    conn: ConnParams,
+    /// The relay URL, which is also the cursor key.
+    relay_url: String,
+    /// The bot's pubkey in hex, for discovery.
+    bot_pubkey_hex: String,
     /// The REST client for discovery and backfill.
     rest: RestClient,
     /// The store holding the `(bot, relay_url)` cursor, read only.
@@ -541,82 +505,6 @@ struct SyncState {
     core: CoreHandle,
     /// A test tap receiving a copy of every membership report.
     membership_tap: Option<mpsc::UnboundedSender<(BotName, BTreeSet<ChannelId>)>>,
-}
-
-/// Dials forever, syncing on every connection.
-async fn run_loop_synced(
-    params: SyncParams,
-    inner: Arc<Inner>,
-    mut cmds: mpsc::UnboundedReceiver<ConnCmd>,
-) {
-    let state = SyncState {
-        conn: params.conn,
-        rest: params.rest,
-        store: std::sync::Mutex::new(params.store),
-        bot: params.bot,
-        sink: params.sink,
-        core: params.core,
-        membership_tap: params.membership_tap,
-    };
-    let mut rung = 0;
-    loop {
-        inner.attempts.fetch_add(1, Ordering::SeqCst);
-        match dial_and_serve_synced(&state, &inner, &mut cmds).await {
-            None => return,
-            Some(Outcome::Dns) => tokio::time::sleep(DNS_RETRY_DELAY).await,
-            Some(Outcome::Down { stable_for }) => {
-                let delay = base_delay(rung);
-                rung = next_rung(rung, stable_for);
-                tokio::time::sleep(jittered(delay)).await;
-            }
-        }
-    }
-}
-
-/// Dials once, syncs, and serves until the socket drops. Returns `None` when
-/// every handle is gone and the task should end.
-async fn dial_and_serve_synced(
-    state: &SyncState,
-    inner: &Inner,
-    cmds: &mut mpsc::UnboundedReceiver<ConnCmd>,
-) -> Option<Outcome> {
-    let connected = match tokio::time::timeout(
-        DIAL_TIMEOUT,
-        tokio_tungstenite::connect_async(&state.conn.relay_url),
-    )
-    .await
-    {
-        Ok(Ok((ws, _))) => ws,
-        Ok(Err(error)) if is_dns_error(&error.to_string()) => return Some(Outcome::Dns),
-        Ok(Err(_)) | Err(_) => {
-            return Some(Outcome::Down {
-                stable_for: Duration::ZERO,
-            });
-        }
-    };
-    let (mut sink, mut stream) = connected.split();
-    let authed_at = match authenticate(&state.conn, &mut sink, &mut stream).await {
-        Some(at) => at,
-        None => {
-            return Some(Outcome::Down {
-                stable_for: Duration::ZERO,
-            });
-        }
-    };
-    inner.up.store(true, Ordering::SeqCst);
-    inner.connected.store(true, Ordering::SeqCst);
-    inner.notify_up.notify_waiters();
-    let mut pending: HashMap<String, oneshot::Sender<Result<(), RelayError>>> = HashMap::new();
-    sync_and_serve(state, &mut sink, &mut stream, cmds, &mut pending).await;
-    inner.connected.store(false, Ordering::SeqCst);
-    for (_, reply) in pending {
-        let _ = reply.send(Err(RelayError::Transport(
-            "the relay connection closed before answering".to_string(),
-        )));
-    }
-    Some(Outcome::Down {
-        stable_for: authed_at.elapsed(),
-    })
 }
 
 /// Discovers, subscribes, backfills and then streams one connection.
@@ -634,8 +522,7 @@ async fn sync_and_serve<Sink, Stream>(
         futures_util::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
 {
     let connect_time = now_secs();
-    let bot_hex = state.conn.keys.public_key().to_hex();
-    let channels = match discover_channels(&state.rest, &bot_hex).await {
+    let channels = match discover_channels(&state.rest, &state.bot_pubkey_hex).await {
         Ok(channels) => {
             report_memberships(state, &channels);
             channels
@@ -649,7 +536,7 @@ async fn sync_and_serve<Sink, Stream>(
         return;
     }
     match backfill_plan(state, connect_time) {
-        BackfillPlan::Skip => serve_stream(state, sink, stream, cmds, pending).await,
+        BackfillPlan::Skip => serve_stream(Some(state), sink, stream, cmds, pending).await,
         BackfillPlan::From(since) => {
             serve_backfilling(state, sink, stream, cmds, pending, &channels, since).await;
         }
@@ -678,7 +565,7 @@ fn backfill_plan(state: &SyncState, connect_time: u64) -> BackfillPlan {
         Ok(None) => {
             state.core.start_cursor(
                 state.bot.clone(),
-                state.conn.relay_url.clone(),
+                state.relay_url.clone(),
                 i64_from_u64(connect_time),
             );
             BackfillPlan::Skip
@@ -781,7 +668,7 @@ async fn serve_backfilling<Sink, Stream>(
                 for delivered in buffered {
                     deliver_live(state, delivered.channel, delivered.event);
                 }
-                serve_stream(state, sink, stream, cmds, pending).await;
+                serve_stream(Some(state), sink, stream, cmds, pending).await;
                 return;
             }
             incoming = stream.next() => {
@@ -817,9 +704,11 @@ async fn serve_backfilling<Sink, Stream>(
     }
 }
 
-/// Streams live events to the sink until the socket drops.
+/// Serves an authenticated connection until the socket drops: answers pings,
+/// resolves publish `OK`s, forwards publish commands and, when `synced` is
+/// set, streams live events to its sink.
 async fn serve_stream<Sink, Stream>(
-    state: &SyncState,
+    synced: Option<&SyncState>,
     sink: &mut Sink,
     stream: &mut Stream,
     cmds: &mut mpsc::UnboundedReceiver<ConnCmd>,
@@ -835,8 +724,10 @@ async fn serve_stream<Sink, Stream>(
                 match incoming {
                     Some(Ok(Message::Text(text))) => {
                         handle_text(&text, pending);
-                        if let Some((channel, event)) = parse_event_message(&text) {
-                            deliver_live(state, channel, event);
+                        if let Some(state) = synced {
+                            if let Some((channel, event)) = parse_event_message(&text) {
+                                deliver_live(state, channel, event);
+                            }
                         }
                     }
                     Some(Ok(Message::Ping(payload))) => {
@@ -948,7 +839,7 @@ fn read_cursor(state: &SyncState) -> Result<Option<i64>, String> {
     match state.store.lock() {
         Ok(store) => store
             .cursors()
-            .get(&state.bot, &state.conn.relay_url)
+            .get(&state.bot, &state.relay_url)
             .map_err(|error| error.to_string()),
         Err(_) => Err("the cursor lock is poisoned".to_string()),
     }
