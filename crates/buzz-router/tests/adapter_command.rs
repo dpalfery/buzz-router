@@ -31,7 +31,8 @@ use router_core::prompt::{reason_text, render, render_context, PromptVars, BUILT
 use router_core::route::Reason;
 use router_core::thread::RoundMode;
 use support::{
-    base_secs, channel, keys, spawn_test_core_with, test_agent_path, top_level, TestCoreOptions,
+    base_secs, channel, keys, pid_alive, spawn_test_core_with, test_agent_path, top_level,
+    TestCoreOptions,
 };
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -537,4 +538,45 @@ async fn a_process_lingering_after_an_api_pass_is_killed_within_five_seconds() {
     let passed = shim.passed.lock().unwrap().unwrap();
     let lingered = ended.lock().unwrap().unwrap() - passed;
     assert!(lingered <= Duration::from_millis(6_500), "{lingered:?}");
+}
+
+/// When the pid file cannot be written the wake fails, and the agent it already started must not
+/// be left running (review finding #22).
+#[tokio::test]
+async fn a_pid_file_write_error_kills_the_agent() {
+    let fixture = fixture();
+    let pidfile = fixture.cwd.join("agent.pids");
+    let config = command_config(
+        agent(&["spawn-grandchild", &pidfile.display().to_string()]),
+        &fixture.cwd,
+    );
+    let (ctx, payload) = wake(config);
+    // A directory where the pid file goes makes writing it fail.
+    let dir = fixture.data_dir.join("wakes").join(ctx.wake_id.to_string());
+    std::fs::create_dir_all(dir.join("pid")).unwrap();
+
+    let event = tokio::time::timeout(
+        Duration::from_secs(30),
+        fixture.adapter.run(ctx, payload, CancellationToken::new()),
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        matches!(&event, AdapterEvent::Failed(why) if why.contains("pid file")),
+        "{event:?}"
+    );
+    // A killed agent may never get to record its pids; one that did must be gone.
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    if let Ok(text) = std::fs::read_to_string(&pidfile) {
+        let pids: Vec<u32> = text.lines().filter_map(|line| line.parse().ok()).collect();
+        let started = Instant::now();
+        while pids.iter().any(|pid| pid_alive(*pid)) {
+            assert!(
+                started.elapsed() < Duration::from_secs(5),
+                "the agent outlived its failed wake: {pids:?}"
+            );
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
 }

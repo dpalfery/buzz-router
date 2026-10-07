@@ -174,8 +174,12 @@ async fn run_command(
         .group_spawn()
         .map_err(io("cannot start the command"))?;
     if let Some(pid) = child.id() {
-        write_private(&dir.join("pid"), format!("{pid}\n").as_bytes())
-            .map_err(io("cannot write the pid file"))?;
+        if let Err(error) = write_private(&dir.join("pid"), format!("{pid}\n").as_bytes()) {
+            if let Err(error) = child.kill().await {
+                tracing::warn!(%error, wake_id = %ctx.wake_id, "cannot kill the command's process group");
+            }
+            return Err(io("cannot write the pid file")(error));
+        }
     }
     let inner = child.inner();
     if let Some(mut stdin) = inner.stdin.take() {
