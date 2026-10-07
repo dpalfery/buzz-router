@@ -1322,3 +1322,82 @@ async fn a_failed_discovery_redials() {
         "the retry subscribes"
     );
 }
+
+// --- Cursor read failures (review cycle 2, finding C) --------------------------
+
+/// A failed cursor read must not skip backfill and go live, which would let
+/// later events move the cursor past history never fetched: the connection
+/// drops and redials, and the retry backfills from the cursor.
+#[tokio::test]
+async fn a_failed_cursor_read_redials_instead_of_skipping_backfill() {
+    let cursor = now_secs() as i64 - 1_000;
+    let channel = channel_uuid(CHANNEL_A);
+    let owner = keys("owner");
+    let history = message(&owner, channel, "history", None, &[], cursor as u64 + 50);
+    let live = message(&owner, channel, "live", None, &[], now_secs());
+    let rest: SharedRest = Arc::new(Mutex::new(RestState::new()));
+    {
+        let mut guard = rest.lock().unwrap();
+        let bot_hex = keys("A").public_key().to_hex();
+        guard.memberships = vec![(bot_hex, CHANNEL_A.to_string())];
+        guard.metadata = vec![(CHANNEL_A.to_string(), "one".to_string(), false)];
+        guard.backfill_pages = vec![serde_json::to_value(vec![history.clone()]).unwrap()];
+    }
+    let (rest_url, _port) = start_rest_mock(rest.clone()).await;
+    let (ws_listener, ws_url) = bind_ws().await;
+    let (seed, store, _dir) = file_stores();
+    seed.cursors()
+        .advance(&bot_name(), &ws_url, cursor)
+        .unwrap();
+    seed.connection()
+        .execute_batch("ALTER TABLE cursors RENAME TO cursors_hidden")
+        .unwrap();
+    let mut sink_rx = spawn_synced(&ws_url, &rest_url, store);
+
+    let (mut sink, mut stream) = accept_split(&ws_listener).await;
+    server_complete_auth(
+        &mut sink,
+        &mut stream,
+        keys("A").public_key(),
+        &ws_url,
+        "chal-c1",
+    )
+    .await;
+    let req = recv_req(&mut stream).await;
+    // The cursor read follows the subscription at once; let it fail, then
+    // send a live event that a connection gone live would deliver.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    send_array(
+        &mut sink,
+        serde_json::json!(["EVENT", req.sub_id, serde_json::to_value(&live).unwrap()]),
+    )
+    .await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        sink_rx.try_recv().is_err(),
+        "a connection whose cursor read failed delivers nothing"
+    );
+    seed.connection()
+        .execute_batch("ALTER TABLE cursors_hidden RENAME TO cursors")
+        .unwrap();
+
+    let (mut sink, mut stream) =
+        tokio::time::timeout(Duration::from_secs(20), accept_split(&ws_listener))
+            .await
+            .expect("the client redials after the failed cursor read");
+    server_complete_auth(
+        &mut sink,
+        &mut stream,
+        keys("A").public_key(),
+        &ws_url,
+        "chal-c2",
+    )
+    .await;
+    let _ = recv_req(&mut stream).await;
+    let backfilled = tokio::time::timeout(Duration::from_secs(10), sink_rx.recv())
+        .await
+        .expect("the retried backfill arrives")
+        .expect("the sink stays open");
+    assert_eq!(backfilled.event.id, history.id);
+    assert_eq!(backfilled.source, Source::Backfill);
+}

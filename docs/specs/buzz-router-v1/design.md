@@ -1084,7 +1084,7 @@ The REST client follows `buzz-acp`'s `RestClient` (`relay.rs:251–580`):
 2. Page with `until` and `before_id`, set from the oldest event of each full page, until a page returns fewer than 500 events. There is **no event cap**.
 3. Sort everything by `(created_at, id)` ascending and send it to ingest as `Backfill`.
 
-With no cursor, backfill is skipped and the cursor starts at connect time (A14).
+With no cursor, backfill is skipped and the cursor starts at connect time (A14). If the cursor can't be read, the connection drops and redials (section 10.5) rather than skipping backfill, so no live event can move the cursor past history that was never fetched.
 
 **Thread fetch and context queries** use the same paging.
 

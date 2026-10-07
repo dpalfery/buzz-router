@@ -512,7 +512,7 @@ struct SyncState {
 
 /// Discovers, subscribes, backfills and then streams one connection.
 /// Discovery, subscription and backfill rerun on every reconnect. A failed
-/// discovery ends the connection so the caller redials.
+/// discovery or cursor read ends the connection so the caller redials.
 async fn sync_and_serve<Sink, Stream>(
     state: &SyncState,
     sink: &mut Sink,
@@ -539,10 +539,11 @@ async fn sync_and_serve<Sink, Stream>(
         return;
     }
     match backfill_plan(state, connect_time) {
-        BackfillPlan::Skip => serve_stream(Some(state), sink, stream, cmds, pending).await,
-        BackfillPlan::From(since) => {
+        Some(BackfillPlan::Skip) => serve_stream(Some(state), sink, stream, cmds, pending).await,
+        Some(BackfillPlan::From(since)) => {
             serve_backfilling(state, sink, stream, cmds, pending, &channels, since).await;
         }
+        None => {}
     }
 }
 
@@ -562,8 +563,9 @@ fn report_memberships(state: &SyncState, channels: &[DiscoveredChannel]) {
 
 /// Reads the cursor and decides the backfill plan. With no cursor this is the
 /// first run (assumption A14): backfill is skipped and the core starts the
-/// cursor at connect time.
-fn backfill_plan(state: &SyncState, connect_time: u64) -> BackfillPlan {
+/// cursor at connect time. A failed read gives `None`, so the connection ends
+/// and the caller redials rather than going live past unfetched history.
+fn backfill_plan(state: &SyncState, connect_time: u64) -> Option<BackfillPlan> {
     match read_cursor(state) {
         Ok(None) => {
             state.core.start_cursor(
@@ -571,12 +573,12 @@ fn backfill_plan(state: &SyncState, connect_time: u64) -> BackfillPlan {
                 state.relay_url.clone(),
                 i64_from_u64(connect_time),
             );
-            BackfillPlan::Skip
+            Some(BackfillPlan::Skip)
         }
-        Ok(Some(cursor)) => BackfillPlan::From(since_from_cursor(cursor)),
+        Ok(Some(cursor)) => Some(BackfillPlan::From(since_from_cursor(cursor))),
         Err(error) => {
-            tracing::warn!(%error, bot = %state.bot, "cannot read the cursor; skipping backfill");
-            BackfillPlan::Skip
+            tracing::warn!(%error, bot = %state.bot, "cannot read the cursor; redialling");
+            None
         }
     }
 }
