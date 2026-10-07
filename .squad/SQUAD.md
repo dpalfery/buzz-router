@@ -56,3 +56,8 @@ Everything you need is inside your worktree under .squad/ (you cannot read outsi
 ## LANE UPDATE 4
 - Landed through: 2.1-2.4, 2.6-2.8, 3.1-3.5, 4.2, 5.1, 6.1, 6.2, AMEND.
 - cursor now owns 3.6 -> 3.7 -> 3.9 -> 3.8 -> 3.10 (was opencode's 3.6/3.9). opencode: 2.5 only, then 2.9 (Docker relay via scripts/e2e-relay.sh). pi: 4.4.
+
+## LANE UPDATE 5 (milestones 1-6 landed; checkboxes for some earlier tasks in tasks.md may be unticked: leave them, 8.2 reconciles)
+- RELAY LOCK: only one agent may run the local Docker relay at a time. Wrap relay use: `until mkdir /private/tmp/buzz-relay.lock 2>/dev/null; do sleep 15; done; trap 'rmdir /private/tmp/buzz-relay.lock' EXIT` ... `scripts/e2e-relay.sh up` ... run ... `scripts/e2e-relay.sh down`. Never leave the relay running or the lock held.
+- cursor: 7.1 -> 7.2 -> 7.5.  opencode: 8.1 (docs-dev, kyber-weave frontmatter, validate).  pi: 7.3 and 7.4 once T7.1 lands.
+- Findings from 2.9: a `#e`-only REST query is rejected (403); filters need `kinds` too.
