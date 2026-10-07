@@ -471,7 +471,9 @@ pub struct SyncParams {
     pub conn: ConnParams,
     /// The REST client for discovery and backfill.
     pub rest: RestClient,
-    /// The store holding the `(bot, relay_url)` cursor.
+    /// The store holding the `(bot, relay_url)` cursor. The task only reads
+    /// it: the core is the only writer (DD-1), so production passes a
+    /// read-only connection.
     pub store: Store,
     /// The local bot whose channels sync.
     pub bot: BotName,
@@ -491,9 +493,11 @@ pub struct SyncParams {
 /// After authentication, on every (re)connect, the task discovers the bot's
 /// channels, reports them to the core as `Memberships{bot, channels}`,
 /// sends one `REQ` per live channel, backfills each channel from
-/// `cursor − OVERLAP_SECS` (skipped on the first run, when the cursor starts
-/// at connect time), delivers the backfill before any live event buffered
-/// meanwhile, then streams live events. The returned handle is the same
+/// `cursor − OVERLAP_SECS` (skipped on the first run, when the core starts
+/// the cursor at connect time), delivers the backfill before any live event
+/// buffered meanwhile, then streams live events. The task never writes the
+/// cursor: the core advances it after applying each event (design 6.3 step
+/// 7). The returned handle is the same
 /// [`Connection`]: `wait_up`, `publish` and `attempts` all work.
 pub fn spawn_synced_connection(params: SyncParams) -> Connection {
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
@@ -520,13 +524,13 @@ enum BackfillPlan {
 
 /// The synced task's shared state. The store sits behind a mutex: `Store`
 /// is `Send` but not `Sync`, so the task locks it only for brief cursor
-/// reads and writes and never holds the guard across an await.
+/// reads and never holds the guard across an await.
 struct SyncState {
     /// How to connect and authenticate. The relay URL is also the cursor key.
     conn: ConnParams,
     /// The REST client for discovery and backfill.
     rest: RestClient,
-    /// The store holding the `(bot, relay_url)` cursor.
+    /// The store holding the `(bot, relay_url)` cursor, read only.
     store: std::sync::Mutex<Store>,
     /// The local bot whose channels sync.
     bot: BotName,
@@ -666,12 +670,16 @@ fn report_memberships(state: &SyncState, channels: &[DiscoveredChannel]) {
 }
 
 /// Reads the cursor and decides the backfill plan. With no cursor this is the
-/// first run (assumption A14): backfill is skipped and the cursor starts at
-/// connect time.
+/// first run (assumption A14): backfill is skipped and the core starts the
+/// cursor at connect time.
 fn backfill_plan(state: &SyncState, connect_time: u64) -> BackfillPlan {
     match read_cursor(state) {
         Ok(None) => {
-            advance_cursor(state, connect_time);
+            state.core.start_cursor(
+                state.bot.clone(),
+                state.conn.relay_url.clone(),
+                i64_from_u64(connect_time),
+            );
             BackfillPlan::Skip
         }
         Ok(Some(cursor)) => BackfillPlan::From(since_from_cursor(cursor)),
@@ -731,7 +739,9 @@ where
 
 /// Backfills every channel from `since` while buffering live events, then
 /// delivers the backfill (ascending) before the buffered live events and
-/// streams. Ends when the socket drops.
+/// streams. Ends when the socket drops, or as soon as any channel's backfill
+/// fails: nothing from this sync is delivered and the caller redials, so no
+/// later event can move the cursor past the missing history.
 async fn serve_backfilling<Sink, Stream>(
     state: &SyncState,
     sink: &mut Sink,
@@ -751,18 +761,21 @@ async fn serve_backfilling<Sink, Stream>(
             match backfill_since(&state.rest, channel.id, since).await {
                 Ok(events) => fetched.push((channel.id, events)),
                 Err(error) => {
-                    tracing::warn!(%error, bot = %state.bot, channel = %channel.id, "backfill failed; continuing without history");
-                    fetched.push((channel.id, Vec::new()));
+                    tracing::warn!(%error, bot = %state.bot, channel = %channel.id, "backfill failed; redialling");
+                    return None;
                 }
             }
         }
-        fetched
+        Some(fetched)
     };
     tokio::pin!(fetch);
     let mut buffered: Vec<Delivered> = Vec::new();
     loop {
         tokio::select! {
             fetched = &mut fetch => {
+                let Some(fetched) = fetched else {
+                    return;
+                };
                 deliver_backfill(state, fetched);
                 for delivered in buffered {
                     deliver_live(state, delivered.channel, delivered.event);
@@ -901,37 +914,32 @@ fn parse_event_message(text: &str) -> Option<(Uuid, nostr::Event)> {
     Some((channel, event))
 }
 
-/// Sends fetched backfill to the sink as `Backfill`, oldest first, and moves
-/// the cursor to the newest backfilled event. The cursor never moves
-/// backwards. A closed sink drops the events.
+/// Sends fetched backfill to the sink as `Backfill`, oldest first by
+/// `(created_at, id)` across every channel: the core advances the cursor as
+/// it applies each event, so no older event may follow a newer one. A closed
+/// sink drops the events.
 fn deliver_backfill(state: &SyncState, fetched: Vec<(Uuid, Vec<nostr::Event>)>) {
-    let mut newest: Option<u64> = None;
-    for (channel, events) in fetched {
-        for event in events {
-            let created = event.created_at.as_secs();
-            newest = Some(newest.map_or(created, |seen| seen.max(created)));
-            let _ = state.sink.send(Delivered {
-                channel,
-                source: Source::Backfill,
-                event,
-            });
-        }
-    }
-    if let Some(created) = newest {
-        advance_cursor(state, created);
+    let mut all: Vec<(Uuid, nostr::Event)> = fetched
+        .into_iter()
+        .flat_map(|(channel, events)| events.into_iter().map(move |event| (channel, event)))
+        .collect();
+    all.sort_by_key(|(_, event)| (event.created_at.as_secs(), event.id.to_hex()));
+    for (channel, event) in all {
+        let _ = state.sink.send(Delivered {
+            channel,
+            source: Source::Backfill,
+            event,
+        });
     }
 }
 
-/// Sends one live event to the sink as `Live` and moves the cursor to it. A
-/// closed sink drops the event.
+/// Sends one live event to the sink as `Live`. A closed sink drops the event.
 fn deliver_live(state: &SyncState, channel: Uuid, event: nostr::Event) {
-    let created = event.created_at.as_secs();
     let _ = state.sink.send(Delivered {
         channel,
         source: Source::Live,
         event,
     });
-    advance_cursor(state, created);
 }
 
 /// Reads the `(bot, relay_url)` cursor in unix seconds, if one is stored.
@@ -942,20 +950,6 @@ fn read_cursor(state: &SyncState) -> Result<Option<i64>, String> {
             .get(&state.bot, &state.conn.relay_url)
             .map_err(|error| error.to_string()),
         Err(_) => Err("the cursor lock is poisoned".to_string()),
-    }
-}
-
-/// Moves the `(bot, relay_url)` cursor to `created_at`, never backwards.
-fn advance_cursor(state: &SyncState, created_at: u64) {
-    let result = match state.store.lock() {
-        Ok(store) => store
-            .cursors()
-            .advance(&state.bot, &state.conn.relay_url, i64_from_u64(created_at))
-            .map_err(|error| error.to_string()),
-        Err(_) => Err("the cursor lock is poisoned".to_string()),
-    };
-    if let Err(error) = result {
-        tracing::warn!(%error, bot = %state.bot, "cannot advance the cursor");
     }
 }
 

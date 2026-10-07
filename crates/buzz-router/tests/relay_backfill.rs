@@ -117,6 +117,10 @@ struct RestState {
     /// Extra latency before answering `#h` queries (lets a live event arrive
     /// mid-backfill in the buffering test).
     backfill_delay: Duration,
+    /// The first this-many `#h` queries fail with HTTP 400 (not retried).
+    backfill_failures: usize,
+    /// The first this-many kind-39002 discovery queries fail with HTTP 400.
+    discovery_failures: usize,
     /// Every request body received, in order.
     requests: Vec<serde_json::Value>,
 }
@@ -128,6 +132,8 @@ impl RestState {
             metadata: Vec::new(),
             backfill_pages: Vec::new(),
             backfill_delay: Duration::ZERO,
+            backfill_failures: 0,
+            discovery_failures: 0,
             requests: Vec::new(),
         }
     }
@@ -146,9 +152,11 @@ async fn query_handler(
     State(state): State<SharedRest>,
     _headers: HeaderMap,
     body: Bytes,
-) -> Json<serde_json::Value> {
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
     let filters: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
     let delay;
+    let mut failed = false;
     let mut out: Vec<serde_json::Value> = Vec::new();
     {
         let mut guard = state.lock().unwrap();
@@ -165,9 +173,20 @@ async fn query_handler(
                 })
             })
             .count();
+        let discovery_hit = guard
+            .requests
+            .iter()
+            .filter(|request| {
+                request
+                    .as_array()
+                    .is_some_and(|fs| fs.iter().any(|f| kinds_of(f).contains(&39002)))
+            })
+            .count();
         for filter in &filters {
             let kinds = kinds_of(filter);
-            if kinds.contains(&39002) {
+            if kinds.contains(&39002) && discovery_hit <= guard.discovery_failures {
+                failed = true;
+            } else if kinds.contains(&39002) {
                 let wanted: Vec<String> = filter["#p"]
                     .as_array()
                     .map(|p| {
@@ -219,6 +238,8 @@ async fn query_handler(
                         out.push(serde_json::to_value(&event).unwrap());
                     }
                 }
+            } else if filter.get("#h").is_some() && hit <= guard.backfill_failures {
+                failed = true;
             } else if filter.get("#h").is_some() {
                 let page = guard
                     .backfill_pages
@@ -235,7 +256,10 @@ async fn query_handler(
     if delay > Duration::ZERO {
         tokio::time::sleep(delay).await;
     }
-    Json(serde_json::Value::Array(out))
+    if failed {
+        return axum::http::StatusCode::BAD_REQUEST.into_response();
+    }
+    Json(serde_json::Value::Array(out)).into_response()
 }
 
 async fn start_rest_mock(state: SharedRest) -> (String, u16) {
@@ -639,6 +663,7 @@ async fn first_run_skips_backfill_and_seeds_cursor_at_connect_time() {
     assert_eq!(seed.cursors().get(&bot, &ws_url).unwrap(), None);
 
     let (sink_tx, mut sink_rx) = mpsc::unbounded_channel::<Delivered>();
+    let (core, _relay, core_store) = spawn_test_core();
     let connect_before = now_secs();
     let conn = spawn_synced_connection(SyncParams {
         conn: ConnParams::new(ws_url.clone(), keys("A"), None),
@@ -646,7 +671,7 @@ async fn first_run_skips_backfill_and_seeds_cursor_at_connect_time() {
         store,
         bot: bot.clone(),
         sink: sink_tx,
-        core: spawn_test_core().0,
+        core,
         membership_tap: None,
     });
 
@@ -691,12 +716,29 @@ async fn first_run_skips_backfill_and_seeds_cursor_at_connect_time() {
         backfill_requests(&rest).is_empty(),
         "first run performs no backfill query"
     );
-    let cursor = seed.cursors().get(&bot, &ws_url).unwrap();
-    let cursor = cursor.expect("first run stores a cursor");
+    // The core is the only cursor writer (DD-1): it stores the first-run
+    // cursor, and the relay task's own store connection never writes.
+    let cursor = eventually_cursor(&core_store, &bot, &ws_url).await;
     assert!(
         cursor as u64 >= connect_before.saturating_sub(10) && cursor as u64 <= now_secs() + 10,
         "the cursor starts at connect time (A14), got {cursor}"
     );
+    assert_eq!(
+        seed.cursors().get(&bot, &ws_url).unwrap(),
+        None,
+        "the relay task does not write the cursor itself"
+    );
+}
+
+/// Polls `store` until the `(bot, relay_url)` cursor exists, up to 5 s.
+async fn eventually_cursor(store: &Store, bot: &BotName, relay_url: &str) -> i64 {
+    for _ in 0..100 {
+        if let Some(cursor) = store.cursors().get(bot, relay_url).unwrap() {
+            return cursor;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("no cursor was stored for {bot} at {relay_url}");
 }
 
 // --- Test 5: buffering ----------------------------------------------------------
@@ -864,15 +906,16 @@ async fn reconnect_rediscovers_resubscribes_and_backfills_from_cursor() {
     assert_eq!(first_batch.event.id, history.id);
     assert_eq!(first_batch.source, Source::Backfill);
 
-    let cursor_after_first = seed
-        .cursors()
-        .get(&bot, &ws_url)
-        .unwrap()
-        .expect("backfill advances the cursor");
-    assert!(
-        cursor_after_first >= cursor,
-        "the cursor never moves backwards"
+    assert_eq!(
+        seed.cursors().get(&bot, &ws_url).unwrap(),
+        Some(cursor),
+        "delivery alone does not move the cursor: the core advances it after applying (DD-1)"
     );
+    // Stand in for the core applying a newer event before the drop.
+    let cursor_after_first = cursor + 100;
+    seed.cursors()
+        .advance(&bot, &ws_url, cursor_after_first)
+        .unwrap();
     let since_second = (cursor_after_first - OVERLAP_SECS as i64) as u64;
 
     // The relay drops the socket; the client redials on the §10.5 ladder.
@@ -1015,4 +1058,218 @@ async fn discovery_reports_memberships_to_core_on_every_connect() {
         .expect("the tap stays open");
     assert_eq!(got_bot, bot);
     assert_eq!(got_channels, BTreeSet::from([ChannelId::from(channel)]));
+}
+
+// --- Cursor ownership and backfill failures (review finding #1) ---------------
+
+/// Spawns a synced connection for bot A over `store`, reporting into a
+/// throwaway test core.
+fn spawn_synced(ws_url: &str, rest_url: &str, store: Store) -> mpsc::UnboundedReceiver<Delivered> {
+    let (sink_tx, sink_rx) = mpsc::unbounded_channel::<Delivered>();
+    let _conn = spawn_synced_connection(SyncParams {
+        conn: ConnParams::new(ws_url.to_owned(), keys("A"), None),
+        rest: RestClient::new(rest_url, keys("A"), None),
+        store,
+        bot: bot_name(),
+        sink: sink_tx,
+        core: spawn_test_core().0,
+        membership_tap: None,
+    });
+    sink_rx
+}
+
+/// A delivered event must not move the cursor until the core has applied it
+/// (design §6.3 step 7, DD-1): the relay task only reads the cursor.
+#[tokio::test]
+async fn the_relay_task_never_advances_the_cursor() {
+    let cursor = now_secs() as i64 - 1_000;
+    let channel = channel_uuid(CHANNEL_A);
+    let owner = keys("owner");
+    let history = message(&owner, channel, "history", None, &[], cursor as u64 + 50);
+    let live = message(&owner, channel, "live", None, &[], now_secs());
+    let rest: SharedRest = Arc::new(Mutex::new(RestState::new()));
+    {
+        let mut guard = rest.lock().unwrap();
+        let bot_hex = keys("A").public_key().to_hex();
+        guard.memberships = vec![(bot_hex, CHANNEL_A.to_string())];
+        guard.metadata = vec![(CHANNEL_A.to_string(), "one".to_string(), false)];
+        guard.backfill_pages = vec![serde_json::to_value(vec![history.clone()]).unwrap()];
+    }
+    let (rest_url, _port) = start_rest_mock(rest.clone()).await;
+    let (ws_listener, ws_url) = bind_ws().await;
+    let (seed, store, _dir) = file_stores();
+    let bot = bot_name();
+    seed.cursors().advance(&bot, &ws_url, cursor).unwrap();
+    let mut sink_rx = spawn_synced(&ws_url, &rest_url, store);
+
+    let (mut sink, mut stream) = accept_split(&ws_listener).await;
+    server_complete_auth(
+        &mut sink,
+        &mut stream,
+        keys("A").public_key(),
+        &ws_url,
+        "chal-cur",
+    )
+    .await;
+    let req = recv_req(&mut stream).await;
+    let backfilled = tokio::time::timeout(Duration::from_secs(10), sink_rx.recv())
+        .await
+        .expect("the backfill arrives")
+        .expect("the sink stays open");
+    assert_eq!(backfilled.event.id, history.id);
+    send_array(
+        &mut sink,
+        serde_json::json!(["EVENT", req.sub_id, serde_json::to_value(&live).unwrap()]),
+    )
+    .await;
+    let streamed = tokio::time::timeout(Duration::from_secs(5), sink_rx.recv())
+        .await
+        .expect("the live event arrives")
+        .expect("the sink stays open");
+    assert_eq!(streamed.event.id, live.id);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    assert_eq!(
+        seed.cursors().get(&bot, &ws_url).unwrap(),
+        Some(cursor),
+        "only the core advances the cursor, after the apply commits"
+    );
+}
+
+/// The core advances the cursor as it applies each event, so backfill from
+/// several channels must reach it oldest first across all of them; otherwise
+/// a crash mid-batch would skip an older event on a later channel.
+#[tokio::test]
+async fn backfill_is_ascending_across_channels() {
+    let connect = now_secs();
+    let since = connect - 1_000 - OVERLAP_SECS;
+    let owner = keys("owner");
+    let a = channel_uuid(CHANNEL_A);
+    let b = channel_uuid(CHANNEL_B);
+    let a1 = message(&owner, a, "a1", None, &[], since + 10);
+    let a2 = message(&owner, a, "a2", None, &[], since + 30);
+    let b1 = message(&owner, b, "b1", None, &[], since + 20);
+    let b2 = message(&owner, b, "b2", None, &[], since + 40);
+    let rest: SharedRest = Arc::new(Mutex::new(RestState::new()));
+    {
+        let mut guard = rest.lock().unwrap();
+        let bot_hex = keys("A").public_key().to_hex();
+        guard.memberships = vec![
+            (bot_hex.clone(), CHANNEL_A.to_string()),
+            (bot_hex, CHANNEL_B.to_string()),
+        ];
+        guard.metadata = vec![
+            (CHANNEL_A.to_string(), "one".to_string(), false),
+            (CHANNEL_B.to_string(), "two".to_string(), false),
+        ];
+        // Page N answers the Nth `#h` query, whichever channel asks.
+        guard.backfill_pages = vec![
+            serde_json::to_value(vec![a1.clone(), a2.clone()]).unwrap(),
+            serde_json::to_value(vec![b1.clone(), b2.clone()]).unwrap(),
+        ];
+    }
+    let (rest_url, _port) = start_rest_mock(rest.clone()).await;
+    let (ws_listener, ws_url) = bind_ws().await;
+    let (seed, store, _dir) = file_stores();
+    seed.cursors()
+        .advance(&bot_name(), &ws_url, (since + OVERLAP_SECS) as i64)
+        .unwrap();
+    let mut sink_rx = spawn_synced(&ws_url, &rest_url, store);
+
+    let (mut sink, mut stream) = accept_split(&ws_listener).await;
+    server_complete_auth(
+        &mut sink,
+        &mut stream,
+        keys("A").public_key(),
+        &ws_url,
+        "chal-asc",
+    )
+    .await;
+    let mut got: Vec<u64> = Vec::new();
+    for _ in 0..4 {
+        let next = tokio::time::timeout(Duration::from_secs(10), sink_rx.recv())
+            .await
+            .expect("the backfill arrives")
+            .expect("the sink stays open");
+        got.push(next.event.created_at.as_secs() - since);
+    }
+    assert_eq!(
+        got,
+        vec![10, 20, 30, 40],
+        "backfill is oldest first across channels"
+    );
+}
+
+/// A channel whose backfill fails must not be skipped: the connection drops
+/// and redials, delivering nothing from the failed sync, so no later event
+/// can move the cursor past the gap.
+#[tokio::test]
+async fn a_failed_channel_backfill_redials() {
+    let cursor = now_secs() as i64 - 1_000;
+    let channel = channel_uuid(CHANNEL_A);
+    let owner = keys("owner");
+    let history = message(&owner, channel, "history", None, &[], cursor as u64 + 50);
+    let live = message(&owner, channel, "live", None, &[], now_secs());
+    let rest: SharedRest = Arc::new(Mutex::new(RestState::new()));
+    {
+        let mut guard = rest.lock().unwrap();
+        let bot_hex = keys("A").public_key().to_hex();
+        guard.memberships = vec![(bot_hex, CHANNEL_A.to_string())];
+        guard.metadata = vec![(CHANNEL_A.to_string(), "one".to_string(), false)];
+        guard.backfill_failures = 1;
+        guard.backfill_delay = Duration::from_millis(400);
+        guard.backfill_pages = vec![
+            serde_json::Value::Array(Vec::new()),
+            serde_json::to_value(vec![history.clone()]).unwrap(),
+        ];
+    }
+    let (rest_url, _port) = start_rest_mock(rest.clone()).await;
+    let (ws_listener, ws_url) = bind_ws().await;
+    let (seed, store, _dir) = file_stores();
+    seed.cursors()
+        .advance(&bot_name(), &ws_url, cursor)
+        .unwrap();
+    let mut sink_rx = spawn_synced(&ws_url, &rest_url, store);
+
+    let (mut sink, mut stream) = accept_split(&ws_listener).await;
+    server_complete_auth(
+        &mut sink,
+        &mut stream,
+        keys("A").public_key(),
+        &ws_url,
+        "chal-f1",
+    )
+    .await;
+    let req = recv_req(&mut stream).await;
+    // A live event arrives while the failing backfill is in flight.
+    send_array(
+        &mut sink,
+        serde_json::json!(["EVENT", req.sub_id, serde_json::to_value(&live).unwrap()]),
+    )
+    .await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert!(
+        sink_rx.try_recv().is_err(),
+        "nothing from a sync whose backfill failed is delivered"
+    );
+
+    let (mut sink, mut stream) =
+        tokio::time::timeout(Duration::from_secs(20), accept_split(&ws_listener))
+            .await
+            .expect("the client redials after the failed backfill");
+    server_complete_auth(
+        &mut sink,
+        &mut stream,
+        keys("A").public_key(),
+        &ws_url,
+        "chal-f2",
+    )
+    .await;
+    let _ = recv_req(&mut stream).await;
+    let backfilled = tokio::time::timeout(Duration::from_secs(10), sink_rx.recv())
+        .await
+        .expect("the retried backfill arrives")
+        .expect("the sink stays open");
+    assert_eq!(backfilled.event.id, history.id);
+    assert_eq!(backfilled.source, Source::Backfill);
 }

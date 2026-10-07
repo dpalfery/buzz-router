@@ -180,7 +180,7 @@ async fn serve(dirs: &Dirs, loaded: Loaded) -> Result<(), CliError> {
             name,
             keys.clone(),
             auth_tag(bot),
-            open(Store::open(&db_path))?,
+            open(Store::open_read_only(&db_path))?,
             &core,
         );
         let _ = relay.connection.set(connection);

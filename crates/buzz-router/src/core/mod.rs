@@ -113,6 +113,12 @@ pub(crate) enum CoreMsg {
     },
     /// Discovery found a channel's name.
     ChannelName { channel: ChannelId, name: String },
+    /// A (bot, relay) pair connected with no cursor: start it at connect time (A14).
+    StartCursor {
+        bot: BotName,
+        relay_url: String,
+        at: i64,
+    },
     /// A wake's adapter run ended.
     WakeEnded { wake_id: Uuid, event: AdapterEvent },
     /// A wake-token API request.
@@ -172,6 +178,14 @@ impl CoreHandle {
     /// Reports a channel's name from discovery (kind 39000).
     pub fn channel_name(&self, channel: ChannelId, name: String) {
         let _ = self.core_tx.send(CoreMsg::ChannelName { channel, name });
+    }
+
+    /// Starts the cursor of a (bot, relay) pair that has none at `at`, in unix seconds (A14). The
+    /// core is the only cursor writer (DD-1); it never moves an existing cursor backwards.
+    pub fn start_cursor(&self, bot: BotName, relay_url: String, at: i64) {
+        let _ = self
+            .core_tx
+            .send(CoreMsg::StartCursor { bot, relay_url, at });
     }
 
     /// Sends a wake-token request to the core and waits for its answer.

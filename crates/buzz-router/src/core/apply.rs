@@ -195,6 +195,11 @@ impl Core {
             CoreMsg::ChannelName { channel, name } => {
                 self.channel_names.insert(channel, name);
             }
+            CoreMsg::StartCursor { bot, relay_url, at } => {
+                if let Err(error) = self.store.cursors().advance(&bot, &relay_url, at) {
+                    tracing::warn!(%error, bot = %bot, "cannot start the cursor");
+                }
+            }
             CoreMsg::WakeEnded { wake_id, event } => self.wake_ended(wake_id, event),
             CoreMsg::Api(request, reply) => self.api(request, reply),
             CoreMsg::Published {
