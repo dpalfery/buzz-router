@@ -83,6 +83,54 @@ jobs:
           fi
           echo "libsqlite3-sys is bundled."
 
+  e2e:
+    name: E2E (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    # The native macOS and Windows legs stay advisory until David decides DA-1:
+    # their runners have no Linux container engine for the local Buzz relay.
+    continue-on-error: ${{ matrix.os != 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      BUZZ_E2E_RELAY_URL: ws://127.0.0.1:3000
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Build the tests
+        run: cargo test -p buzz-router --locked --test 'e2e_*' --no-run
+
+      # Checks out Buzz at the pinned rev, runs `docker compose up -d postgres redis`,
+      # migrates, and runs buzz-relay with `.env.example` plus the task 2.9 test-identity
+      # auth settings. The published image for the pinned rev is used when available;
+      # otherwise the relay is built from the checkout.
+      - name: Start the local Buzz relay
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! scripts/e2e-relay.sh up; then
+            scripts/e2e-relay.sh down || true
+            scripts/e2e-relay.sh up --build
+          fi
+
+      - name: End-to-end tests
+        shell: bash
+        run: BUZZ_E2E=1 cargo test -p buzz-router --locked --test 'e2e_*' -- --test-threads=1
+
+      - name: Relay log
+        if: failure()
+        shell: bash
+        run: scripts/e2e-relay.sh logs || true
+
+      - name: Stop the local Buzz relay
+        if: always()
+        shell: bash
+        run: scripts/e2e-relay.sh down || true
+
   msrv:
     name: MSRV (1.88)
     runs-on: ubuntu-latest

@@ -1287,7 +1287,7 @@ All tasks here are **[Docker + local Buzz relay]**. They are acceptance verifica
        4. runs `BUZZ_E2E=1 cargo test -p buzz-router --test 'e2e_*' -- --test-threads=1`.
     2. Native macOS and Windows E2E legs are added with `continue-on-error: true` until David decides DA-1.
   - **Replacement validation:** a green `e2e` job plus a green three-OS test matrix on the same commit, with the run URL recorded.
-  - [ ] Workflow updated
+  - [x] Workflow updated
   - [ ] Green run recorded
 
 ## Milestone 8: documentation and closeout
