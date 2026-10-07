@@ -149,6 +149,15 @@ impl<'c> Wakes<'c> {
         Ok(())
     }
 
+    /// Sets the attempt number, as when recovery merges a retry into a queued wake.
+    pub fn set_attempt(&self, id: &Uuid, attempt: u32) -> Result<(), StoreError> {
+        self.conn.execute(
+            "UPDATE wakes SET attempt = ?2 WHERE id = ?1",
+            params![id.to_string(), attempt],
+        )?;
+        Ok(())
+    }
+
     /// Marks the wake running with its token hash, start time and deadline.
     pub fn start(
         &self,

@@ -342,6 +342,7 @@ pub fn spawn_test_core_with(options: TestCoreOptions) -> (CoreHandle, FakeRelay,
         keys: keys_by_bot,
         memberships,
         adapters,
+        data_dir: None,
     });
     let _ = core_slot.set(handle.clone());
     (handle, relay, store)

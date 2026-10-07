@@ -18,6 +18,7 @@ pub mod queue;
 mod timers;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -31,6 +32,7 @@ use crate::adapter::{Adapter, AdapterEvent};
 use crate::clock::Clock;
 use crate::ingest::{EnrichedEvent, Ingest, IngestOutput, Source};
 use crate::relay::RelayPort;
+use crate::store::wakes::WakeState;
 use crate::store::Store;
 use dispatch::Purpose;
 
@@ -60,11 +62,26 @@ pub struct CoreDeps {
     pub memberships: BTreeMap<BotName, BTreeSet<ChannelId>>,
     /// Each local bot's adapter.
     pub adapters: BTreeMap<BotName, Arc<dyn Adapter>>,
+    /// The data directory holding the wakes' scratch directories, which recovery deletes.
+    pub data_dir: Option<PathBuf>,
+}
+
+/// A backfilled owner message too old to wake anyone (design 6.2 step 8, DD-14).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MissedMessage {
+    /// The message.
+    pub event_id: EventId,
+    /// Its channel.
+    pub channel_id: ChannelId,
+    /// Its `created_at`, in unix seconds.
+    pub created_at: i64,
 }
 
 /// In-memory counters, for `status` and tests.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DebugCounters {
+    /// Backfilled owner messages whose wakes were dropped as too old (R48.3, DD-12).
+    pub missed: Vec<MissedMessage>,
     /// Budget suppressions per bot since start (R20.4, R21.4).
     pub budget_suppressed: BTreeMap<BotName, u64>,
     /// Unmanaged posts detected since start (R51.1, DD-12).
@@ -189,7 +206,7 @@ pub fn spawn_core(deps: CoreDeps) -> CoreHandle {
     let (core_tx, core_rx) = mpsc::unbounded_channel();
     let ingest = Ingest::new(deps.ingest_store, deps.relays.clone(), deps.clock.clone());
     tokio::spawn(run_ingest(ingest, ingest_rx, core_tx.clone()));
-    let core = apply::Core::new(
+    let mut core = apply::Core::new(
         apply::CoreParts {
             store: deps.store,
             roster: deps.roster,
@@ -202,8 +219,83 @@ pub fn spawn_core(deps: CoreDeps) -> CoreHandle {
         },
         core_tx.clone(),
     );
+    core.recover(deps.data_dir.as_deref());
     tokio::spawn(run_core(core, core_rx));
     CoreHandle { ingest_tx, core_tx }
+}
+
+impl apply::Core {
+    /// Recovers the wakes a previous run left `running` (design 6.2 step 6, R49). Each becomes
+    /// `interrupted` and loses its scratch directory. An attempt-1 wake of a bot that isn't
+    /// halted, with an owner trigger and no post in its thread since it started, is re-queued as
+    /// attempt 2; any other gets ⚠️ on its reaction target.
+    fn recover(&mut self, data_dir: Option<&Path>) {
+        let running = match self.store.wakes().with_state(WakeState::Running) {
+            Ok(running) => running,
+            Err(error) => {
+                tracing::warn!(%error, "cannot read the running wakes to recover them");
+                return;
+            }
+        };
+        let now_ms = self.clock.now().timestamp_millis();
+        let halts = self.halts();
+        let outcome = serde_json::json!({ "posted": [], "detail": "interrupted" }).to_string();
+        for wake in running {
+            if let Err(error) =
+                self.store
+                    .wakes()
+                    .finish(&wake.id, WakeState::Interrupted, now_ms, Some(&outcome))
+            {
+                tracing::warn!(%error, wake_id = %wake.id, "cannot mark a wake interrupted");
+                continue;
+            }
+            if let Some(data_dir) = data_dir {
+                let scratch = data_dir.join("wakes").join(wake.id.to_string());
+                match std::fs::remove_dir_all(&scratch) {
+                    Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                        tracing::warn!(%error, wake_id = %wake.id, "cannot delete a wake's scratch directory");
+                    }
+                    _ => {}
+                }
+            }
+            let triggers = queue::decode(&wake.triggers).unwrap_or_else(|error| {
+                tracing::warn!(%error, wake_id = %wake.id, "cannot read an interrupted wake's triggers");
+                Vec::new()
+            });
+            let halted = halts
+                .as_ref()
+                .map_or(true, |halts| halts.all || halts.bots.contains(&wake.bot));
+            let owner = triggers.iter().any(|trigger| trigger.class == "owner");
+            let posted = wake.started_at.map_or(Ok(false), |started_ms| {
+                self.store.posts().posted_in_thread_since(
+                    &wake.bot,
+                    &wake.root_id,
+                    started_ms.div_euclid(1_000),
+                )
+            });
+            let posted = posted.unwrap_or_else(|error| {
+                tracing::warn!(%error, wake_id = %wake.id, "cannot check an interrupted wake's posts");
+                true
+            });
+            if wake.attempt == 1 && !halted && owner && !posted {
+                match queue::requeue(self.store.connection(), &wake, now_ms) {
+                    Ok(()) => {
+                        tracing::info!(bot = %wake.bot, wake_id = %wake.id, "re-queued an interrupted wake")
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, wake_id = %wake.id, "cannot re-queue an interrupted wake")
+                    }
+                }
+                continue;
+            }
+            tracing::warn!(bot = %wake.bot, wake_id = %wake.id, "a wake was interrupted by a restart");
+            let target = dispatch::reaction_target(&triggers)
+                .and_then(|target| nostr::EventId::from_hex(target.as_str()).ok());
+            if let Some(target) = target {
+                self.react(&wake.bot, &target, dispatch::WARNING);
+            }
+        }
+    }
 }
 
 /// The ingest task: one event at a time, in arrival order.

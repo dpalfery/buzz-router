@@ -132,6 +132,44 @@ pub(super) fn enqueue(
     }
 }
 
+/// Re-queues an interrupted wake as attempt 2, dispatchable at `now_ms`: a new queued wake with
+/// the same bot, root and triggers, or, when (bot, root) already has a queued wake, its triggers
+/// merged into that one (design 6.2 step 6).
+pub(super) fn requeue(conn: &Connection, wake: &WakeRow, now_ms: i64) -> Result<(), StoreError> {
+    let wakes = Wakes::new(conn);
+    let Some(queued) = wakes.find_queued(&wake.bot, &wake.root_id)? else {
+        return wakes.insert(&WakeRow {
+            id: Uuid::new_v4(),
+            state: WakeState::Queued,
+            token_hash: None,
+            attempt: 2,
+            created_at: now_ms,
+            dispatch_after: now_ms,
+            started_at: None,
+            deadline: None,
+            ended_at: None,
+            outcome: None,
+            ..wake.clone()
+        });
+    };
+    let mut triggers = decode(&queued.triggers)?;
+    for trigger in decode(&wake.triggers)? {
+        let known = triggers
+            .iter()
+            .any(|seen| seen.event_id == trigger.event_id && seen.edit_id == trigger.edit_id);
+        if !known {
+            triggers.push(trigger);
+        }
+    }
+    triggers.sort_by_key(|trigger| trigger.received_at_ms);
+    let (reason, priority) = top_trigger(&triggers).map_or_else(
+        || (queued.reason.clone(), queued.priority.clone()),
+        |top| (snake(&top.reason), snake(&top.priority)),
+    );
+    wakes.update_queued(&queued.id, &reason, &priority, &encode(&triggers)?, now_ms)?;
+    wakes.set_attempt(&queued.id, 2)
+}
+
 impl Core {
     /// Drops the queued wakes of halted bots and dispatches every due wake that has a free slot,
     /// by priority and then FIFO (design 6.5, `schedule()`).

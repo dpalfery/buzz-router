@@ -987,9 +987,10 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - A backfilled mention 23 hours old wakes.
     - *RED:* recovery isn't implemented, so `running` rows stay `running` and old owner messages wake.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** T4.1 commit. RED: four restart tests failed with `Running` where `Interrupted` was expected, and `engine_missed` failed to compile on the missing `DebugCounters::missed` (`E0609`). The stored-halts and 25-hour stop tests passed before any change and stay as regression guards. `cargo test -p buzz-router --test engine_restart --test engine_missed`: 8 passed. A missed message is listed only when Wake decisions were actually dropped.
 
 - [x] **4.2 Unmanaged-post detection**
   - **Objective:** Flag kind-9 events signed by a local bot key that the router didn't publish, without ever flagging its own echoes.

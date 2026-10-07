@@ -68,4 +68,20 @@ impl<'c> Posts<'c> {
             |row| row.get(0),
         )?)
     }
+
+    /// Whether `bot` has a wake post in the thread at `root_id` created at or after `since`, in
+    /// unix seconds (design 6.2 step 6).
+    pub fn posted_in_thread_since(
+        &self,
+        bot: &BotName,
+        root_id: &EventId,
+        since: i64,
+    ) -> Result<bool, StoreError> {
+        Ok(self.conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM posts JOIN wakes ON posts.wake_id = wakes.id \
+             WHERE wakes.root_id = ?1 AND posts.bot = ?2 AND posts.created_at >= ?3)",
+            params![root_id.as_str(), bot.as_str(), since],
+            |row| row.get(0),
+        )?)
+    }
 }

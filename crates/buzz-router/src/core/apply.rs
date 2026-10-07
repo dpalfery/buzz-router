@@ -33,10 +33,10 @@ use uuid::Uuid;
 use super::control::write_halts;
 use super::dispatch::{RunningWake, TriggerCache};
 use super::queue::{enqueue, Debounce, Trigger};
-use super::{CoreMsg, DebugCounters};
+use super::{CoreMsg, DebugCounters, MissedMessage};
 use crate::adapter::Adapter;
 use crate::clock::Clock;
-use crate::ingest::EnrichedEvent;
+use crate::ingest::{EnrichedEvent, Source};
 use crate::relay::RelayPort;
 use crate::store::events::{EventClass, EventRow, Events};
 use crate::store::halts::HaltScope;
@@ -52,6 +52,8 @@ const WARNING: &str = "\u{26A0}\u{FE0F}";
 
 /// How many threads the cache holds (design section 6.4).
 const THREAD_CACHE_CAPACITY: usize = 2_000;
+/// How much older than now a backfilled owner message may be and still wake (R48.3).
+const MISSED_AFTER_SECS: i64 = 24 * 3_600;
 
 /// The length of the hourly budget window, in milliseconds (A10).
 const HOUR_MS: i64 = 3_600_000;
@@ -250,8 +252,10 @@ impl Core {
             wake_counts: &counts,
             quiet: quiet_set(&self.roster, now),
         };
-        let result = route(&ev.in_event, &snapshot, now);
+        let mut result = route(&ev.in_event, &snapshot, now);
         self.log_diagnostics(&result);
+        let class = classify(&ev.in_event, &self.roster);
+        self.drop_missed_wakes(ev, &class, now, &mut result);
 
         let has_wake = result
             .decisions
@@ -260,7 +264,6 @@ impl Core {
         let updated = ev.root.as_ref().and_then(|root| {
             updated_thread(thread, root, &ev.in_event, &result.thread_update, has_wake)
         });
-        let class = classify(&ev.in_event, &self.roster);
         let received_ms = ev.received_at.timestamp_millis();
         self.prune_bot_posts(now.timestamp_millis());
         if let (AuthorClass::Bot(_), Some(root), KIND_MESSAGE) =
@@ -352,6 +355,35 @@ impl Core {
         }
         self.counters.last_decisions = result.decisions;
         self.advance_cursor(ev);
+    }
+
+    /// Drops the wakes of a backfilled owner message more than 24 hours older than `now`, and
+    /// lists it in `missed`; its thread update and control still apply (design 6.2 step 8, DD-14,
+    /// DA-2).
+    fn drop_missed_wakes(
+        &mut self,
+        ev: &EnrichedEvent,
+        class: &AuthorClass,
+        now: DateTime<Utc>,
+        result: &mut RouteResult,
+    ) {
+        let too_old = now.timestamp().saturating_sub(ev.in_event.created_at) > MISSED_AFTER_SECS;
+        if ev.source != Source::Backfill || *class != AuthorClass::Owner || !too_old {
+            return;
+        }
+        let before = result.decisions.len();
+        result
+            .decisions
+            .retain(|decision| !matches!(decision, Decision::Wake { .. }));
+        if result.decisions.len() == before {
+            return;
+        }
+        tracing::info!(event_id = %ev.in_event.id, "an owner message over 24 hours old wakes nobody");
+        self.counters.missed.push(MissedMessage {
+            event_id: ev.in_event.id.clone(),
+            channel_id: ev.in_event.channel,
+            created_at: ev.in_event.created_at,
+        });
     }
 
     /// Replays a thread's history, applying only the thread updates (design 6.3, RebuildThread).

@@ -47,8 +47,8 @@ const EYES: &str = "\u{1F440}";
 const CHECK: &str = "\u{2705}";
 /// The reaction for a timeout (R27.2).
 const HOURGLASS: &str = "\u{231B}";
-/// The reaction for a failure (R36.5).
-const WARNING: &str = "\u{26A0}\u{FE0F}";
+/// The reaction for a failure (R36.5) and an interrupted wake (R49).
+pub(super) const WARNING: &str = "\u{26A0}\u{FE0F}";
 /// The reaction for a killed wake (R36.4).
 const STOP: &str = super::control::STOP_EMOJI;
 
@@ -834,7 +834,7 @@ fn start_wake(
 
 /// The latest owner trigger's event by (`created_at`, `event_id`), else the latest trigger's
 /// (A8).
-fn reaction_target(triggers: &[Trigger]) -> Option<EventId> {
+pub(super) fn reaction_target(triggers: &[Trigger]) -> Option<EventId> {
     let latest = |owner_only: bool| {
         triggers
             .iter()

@@ -88,6 +88,14 @@ async fn serve(dirs: &Dirs, roster: Roster, config: RouterConfig) -> Result<(), 
         .map_err(|error| CliError::other(format!("cannot create the admin token: {error}")))?;
 
     let keys = load_keys(&config, &roster, &dirs.config_dir);
+    match core_store.halts().list() {
+        Ok(halts) => {
+            for halt in halts {
+                tracing::info!(scope = ?halt.scope, "a halt is in force");
+            }
+        }
+        Err(error) => tracing::warn!(%error, "cannot read the halts"),
+    }
     let mut served = config.clone();
     served.bots.retain(|name, _| keys.contains_key(name));
 
@@ -114,6 +122,7 @@ async fn serve(dirs: &Dirs, roster: Roster, config: RouterConfig) -> Result<(), 
         keys: keys.clone(),
         memberships: BTreeMap::new(),
         adapters: select_adapters(&served, &dirs.data_dir, &http),
+        data_dir: Some(dirs.data_dir.clone()),
     });
 
     let state = ApiState::new(core.clone(), token, &roster);
