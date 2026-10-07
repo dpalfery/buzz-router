@@ -803,7 +803,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
   - [x] GREEN
   - [x] REFACTOR
 
-- [ ] **3.5 Command adapter and test agent**
+- [x] **3.5 Command adapter and test agent**
   - **Objective:** Implement `CommandAdapter` (process group, environment, prompt modes, capped stdout, stderr logging, scratch files, pid file) and the `buzz-router-test-agent` modes.
   - **Files:** `crates/buzz-router/src/adapter/command.rs`, `crates/test-agent/src/main.rs`, `crates/buzz-router/tests/adapter_command.rs`.
   - **Design:** §7.1, DD-19, DD-20, DD-21, §16.3.
@@ -829,9 +829,9 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - **Pass then linger:** `api-pass-then-sleep` is killed within 5 s of the pass.
     - *RED:* compile error, unresolved `buzz_router::adapter::command::CommandAdapter`.
     - *GREEN:* passes on all three OSes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 - [ ] **3.6 HTTP API and admin token**
   - **Objective:** Implement the loopback and tailnet routers, token and admin auth, the `/v1/post` precedence, the error bodies, body limits and the admin-token file.

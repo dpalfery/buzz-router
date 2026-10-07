@@ -4,6 +4,8 @@
 //! [`WakePayload`]; the returned future resolves to the [`AdapterEvent`] that ends the run. The
 //! core cancels a run through its [`CancellationToken`].
 
+pub mod command;
+
 use chrono::{DateTime, Utc};
 use futures_util::future::BoxFuture;
 use router_core::config::{AdapterConfig, Limits};

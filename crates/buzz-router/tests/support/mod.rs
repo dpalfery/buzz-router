@@ -161,17 +161,47 @@ pub fn roster_toml_with(limits: &str, extra: &str) -> String {
     roster
 }
 
+/// The `[bots.adapter]` table every test bot gets unless a test supplies its own.
+pub const DEFAULT_ADAPTER_TOML: &str = "type = \"command\"\ncommand = [\"agent\"]\ncwd = \"~/fixture\"\nenv = {}\nprompt_mode = \"stdin\"\nreply_mode = \"stdout\"\nprompt_template = \"\"\n";
+
 /// A `router.toml` serving every bot in [`BOTS`] with `max_concurrent` each.
 pub fn router_toml(max_concurrent: u32) -> String {
+    router_toml_with(max_concurrent, DEFAULT_ADAPTER_TOML)
+}
+
+/// [`router_toml`] with `adapter` as every bot's `[bots.adapter]` table body.
+pub fn router_toml_with(max_concurrent: u32, adapter: &str) -> String {
     let mut router = format!(
         "relay_url = \"{RELAY_URL}\"\napi_bind = \"127.0.0.1:47821\"\ntailnet_bind = \"\"\npublic_url = \"\"\nroster_path = \"roster.toml\"\n"
     );
     for name in BOTS {
         router.push_str(&format!(
-            "\n[[bots]]\nname = \"{name}\"\nkey = \"keychain\"\nauth_tag = \"\"\nmax_concurrent = {max_concurrent}\n\n[bots.adapter]\ntype = \"command\"\ncommand = [\"agent\"]\ncwd = \"~/fixture\"\nenv = {{}}\nprompt_mode = \"stdin\"\nreply_mode = \"stdout\"\nprompt_template = \"\"\n"
+            "\n[[bots]]\nname = \"{name}\"\nkey = \"keychain\"\nauth_tag = \"\"\nmax_concurrent = {max_concurrent}\n\n[bots.adapter]\n{adapter}"
         ));
     }
     router
+}
+
+/// The path of the built `buzz-router-test-agent` binary, building it once per test process
+/// (design 16.3).
+pub fn test_agent_path() -> std::path::PathBuf {
+    static BUILT: OnceLock<std::path::PathBuf> = OnceLock::new();
+    BUILT
+        .get_or_init(|| {
+            let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
+            let status = std::process::Command::new(cargo)
+                .args(["build", "-p", "test-agent"])
+                .status()
+                .unwrap();
+            assert!(status.success(), "cannot build the test agent");
+            let exe = std::env::current_exe().unwrap();
+            let profile_dir = exe.parent().and_then(std::path::Path::parent).unwrap();
+            profile_dir.join(format!(
+                "buzz-router-test-agent{}",
+                std::env::consts::EXE_SUFFIX
+            ))
+        })
+        .clone()
 }
 
 /// Writes to the database before a test core starts.
@@ -189,6 +219,10 @@ pub struct TestCoreOptions {
     pub adapter: FakeAdapter,
     /// Extra roster TOML, such as `[[channels]]` tables.
     pub roster_extra: String,
+    /// Every bot's `[bots.adapter]` table body.
+    pub adapter_toml: String,
+    /// An adapter to use instead of `adapter`, such as a real `CommandAdapter`.
+    pub real_adapter: Option<Arc<dyn Adapter>>,
 }
 
 impl Default for TestCoreOptions {
@@ -199,6 +233,8 @@ impl Default for TestCoreOptions {
             seed: None,
             adapter: FakeAdapter::new(vec![Step::Exit(0)]),
             roster_extra: String::new(),
+            adapter_toml: DEFAULT_ADAPTER_TOML.to_owned(),
+            real_adapter: None,
         }
     }
 }
@@ -219,11 +255,15 @@ pub fn spawn_test_core_with(options: TestCoreOptions) -> (CoreHandle, FakeRelay,
         seed(&store);
     }
     let roster = parse_roster(&roster_toml_with(&options.limits, &options.roster_extra)).unwrap();
-    let config = parse_router(&router_toml(options.max_concurrent), &roster).unwrap();
+    let config = parse_router(
+        &router_toml_with(options.max_concurrent, &options.adapter_toml),
+        &roster,
+    )
+    .unwrap();
     let clock: Arc<dyn Clock> = Arc::new(VirtualClock::new(base_time()));
     let fake = options.adapter.with_clock(clock.clone());
     let core_slot = fake.core.clone();
-    let adapter: Arc<dyn Adapter> = Arc::new(fake);
+    let adapter: Arc<dyn Adapter> = options.real_adapter.unwrap_or_else(|| Arc::new(fake));
     let relay = FakeRelay::new();
     let mut relays: BTreeMap<BotName, Arc<dyn RelayPort>> = BTreeMap::new();
     let mut keys_by_bot = BTreeMap::new();
