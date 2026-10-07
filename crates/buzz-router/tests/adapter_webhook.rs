@@ -219,6 +219,17 @@ async fn async_500_fails() {
 }
 
 #[tokio::test]
+async fn a_failed_request_never_carries_the_url() {
+    // Nothing listens here, so the request fails before any HTTP exchange (R59.4).
+    let url = "http://127.0.0.1:1";
+    let (event, _) = run(config(url, secret_env(), WebhookMode::Async, None)).await;
+    let AdapterEvent::Failed(message) = event else {
+        unreachable!("expected a failed wake, got {event:?}");
+    };
+    assert!(!message.contains(url), "{message}");
+}
+
+#[tokio::test]
 async fn async_without_an_answer_in_ten_seconds_fails() {
     let (url, received) = serve(Answer::Never).await;
     let (ctx, payload) = wake(config(&url, secret_env(), WebhookMode::Async, None));

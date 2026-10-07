@@ -20,6 +20,7 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufRead
 use tokio_util::sync::CancellationToken;
 
 use super::{Adapter, AdapterEvent, WakeContext};
+use crate::logging::redact;
 
 /// At most this much stdout is kept (R37.6).
 const STDOUT_CAP: usize = 65_536;
@@ -192,10 +193,14 @@ async fn run_command(
         .stdout
         .take()
         .map(|out| tokio::spawn(read_capped(out)));
-    let stderr = inner
-        .stderr
-        .take()
-        .map(|err| tokio::spawn(log_lines(err, ctx.bot.to_string(), ctx.wake_id)));
+    let stderr = inner.stderr.take().map(|err| {
+        tokio::spawn(log_lines(
+            err,
+            ctx.bot.to_string(),
+            ctx.wake_id,
+            ctx.token.clone(),
+        ))
+    });
 
     let exited = tokio::select! {
         status = child.wait() => Some(status),
@@ -275,10 +280,11 @@ async fn read_capped(mut out: impl AsyncRead + Unpin) -> String {
     String::from_utf8_lossy(&kept).into_owned()
 }
 
-/// Forwards each stderr line to the log (R37.10).
-async fn log_lines(err: impl AsyncRead + Unpin, bot: String, wake_id: uuid::Uuid) {
+/// Forwards each stderr line to the log, with the wake token redacted (R59.4).
+async fn log_lines(err: impl AsyncRead + Unpin, bot: String, wake_id: uuid::Uuid, token: String) {
     let mut lines = BufReader::new(err).lines();
     while let Ok(Some(line)) = lines.next_line().await {
+        let line = redact(&line, &[token.as_str()]);
         tracing::info!(bot = %bot, wake_id = %wake_id, line = %line, "agent stderr");
     }
 }

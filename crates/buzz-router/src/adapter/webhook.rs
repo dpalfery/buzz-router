@@ -38,9 +38,10 @@ enum WebhookError {
     /// The body could not be serialised.
     #[error("cannot serialise the request body: {0}")]
     Body(#[from] serde_json::Error),
-    /// The request failed or timed out.
+    /// The request failed or timed out. The URL is stripped at conversion, so webhook
+    /// URLs (which may carry secrets) never reach a log line (R59.4).
     #[error("the request failed: {0}")]
-    Request(#[from] reqwest::Error),
+    Request(reqwest::Error),
     /// The request did not finish in time.
     #[error("no answer within {} s", .0.as_secs())]
     Timeout(Duration),
@@ -50,6 +51,12 @@ enum WebhookError {
     /// A sync webhook's body is neither `{"text": s}` nor `{"pass": true}`.
     #[error("the webhook's answer is neither {{\"text\": ...}} nor {{\"pass\": true}}")]
     UnrecognisedReply,
+}
+
+impl From<reqwest::Error> for WebhookError {
+    fn from(error: reqwest::Error) -> Self {
+        Self::Request(error.without_url())
+    }
 }
 
 /// The webhook's settings, from [`AdapterConfig::Webhook`].

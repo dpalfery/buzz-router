@@ -1205,6 +1205,7 @@ Requirements: 20.4, 21.4, 51.2, 57.
   - Human-readable to stderr, plus JSON lines to `data_dir/logs/buzz-router.log` through `tracing-appender` daily rotation, keeping 14 files.
   - Spans carry `bot`, `wake_id`, `event_id` and `root_id`.
   - `LogLimiter` provides the once-per-key and once-per-key-per-hour warnings for roster drift and unmanaged posts (R4.4, R51.2).
+  - Secrets never reach a log line (R59.4): agent stderr lines are logged with the wake token redacted, and webhook request errors drop the URL.
   - Budget suppressions are logged at info (R20.4, R21.4).
 
 ## 15. Build, CI and release

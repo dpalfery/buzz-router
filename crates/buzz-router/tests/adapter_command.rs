@@ -305,6 +305,27 @@ async fn stderr_lines_are_logged() {
 }
 
 #[tokio::test]
+async fn stderr_lines_redact_the_wake_token() {
+    let fixture = fixture();
+    let captured = Captured::default();
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(move || writer.clone())
+        .with_ansi(false)
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+    // `wake()` always uses this token, so echoing it proves the log redacts it (R59.4).
+    let token = "ab".repeat(32);
+    let config = command_config(agent(&["stderr", "--text", token.as_str()]), &fixture.cwd);
+
+    run(&fixture.adapter, config).await;
+
+    let logs = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+    assert!(!logs.contains(&token), "{logs}");
+    assert!(logs.contains("[redacted]"), "{logs}");
+}
+
+#[tokio::test]
 async fn wake_files_are_private_and_deleted_when_the_wake_ends() {
     let fixture = fixture();
     let mut config = command_config(agent(&["echo", "--delay", "2"]), &fixture.cwd);
