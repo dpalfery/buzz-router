@@ -1254,7 +1254,7 @@ All tasks here are **[Docker + local Buzz relay]**. They are acceptance verifica
   - [x] REFACTOR
   - **Done:** T7.3 commit. RED: the scenario files did not exist. `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 cargo test -p buzz-router --test e2e_everyone --test e2e_stop -- --test-threads=1`: both pass against the local Docker relay under the relay lock (E2 in 86 s, E3 in 52 s). No product defects found; no product fix needed.
 
-- [ ] **7.4 E5 and E6 [Docker + local Buzz relay]**
+- [x] **7.4 E5 and E6 [Docker + local Buzz relay]**
   - **Objective:** Automate acceptance scenarios E5 and E6.
   - **Files:** `crates/buzz-router/tests/{e2e_crash_recovery.rs,e2e_unmanaged.rs}`.
   - **Design:** §16.4.
@@ -1269,9 +1269,10 @@ All tasks here are **[Docker + local Buzz relay]**. They are acceptance verifica
       - **E6:** publishing directly with bot A's key gets ⚠️ on that post, and `status` shows `unmanaged_posts: 1`.
     - *RED:* the scenario files don't exist yet.
     - *GREEN:* both pass.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** T7.4 commit. RED: the scenario files did not exist. `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 cargo test -p buzz-router --test e2e_crash_recovery --test e2e_unmanaged -- --test-threads=1`: both pass against the local Docker relay under the relay lock (E5 in 46 s, E6 in 1 s). No product defects found; no product fix needed.
 
 - [ ] **7.5 E7: the E2E CI job [Docker + local Buzz relay]** *(no-test task)*
   - **Objective:** Add the `e2e` job to `ci.yml` and make the whole matrix green (E7).
