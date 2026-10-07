@@ -466,3 +466,37 @@ fn ws_to_http_mapping() {
         "https://example.com"
     );
 }
+
+/// A relay that accepts the connection but never answers must not hang the
+/// client: each attempt times out, and timeouts are retried (review finding
+/// #6, R61.5).
+#[tokio::test]
+async fn a_silent_relay_times_out_and_is_retried() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let accepted = Arc::new(AtomicUsize::new(0));
+    let counter = accepted.clone();
+    tokio::spawn(async move {
+        let mut held = Vec::new();
+        while let Ok((socket, _)) = listener.accept().await {
+            counter.fetch_add(1, Ordering::SeqCst);
+            held.push(socket);
+        }
+    });
+    let client = RestClient::new(&format!("ws://127.0.0.1:{port}"), test_keys(), None)
+        .with_request_timeout(std::time::Duration::from_millis(200));
+
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        client.query(vec![nostr::Filter::new().kind(nostr::Kind::Custom(9))]),
+    )
+    .await
+    .expect("the query gives up instead of hanging");
+
+    assert!(result.is_err(), "a silent relay fails the query");
+    assert_eq!(
+        accepted.load(Ordering::SeqCst),
+        4,
+        "one attempt plus three timeout retries"
+    );
+}

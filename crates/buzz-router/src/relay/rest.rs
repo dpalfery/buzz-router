@@ -35,6 +35,24 @@ const RETRY_BASE_DELAYS: [Duration; 3] = [
 /// The default page size when the caller's filters set no limit.
 const DEFAULT_PAGE_LIMIT: usize = 500;
 
+/// How long one attempt may take to connect.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+/// How long one attempt may take in total, so a relay that accepts the
+/// connection but never answers fails (and is retried) instead of hanging.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// An HTTP client whose attempts give up after `timeout`.
+fn http_client(timeout: Duration) -> reqwest::Client {
+    reqwest::Client::builder()
+        .connect_timeout(CONNECT_TIMEOUT.min(timeout))
+        .timeout(timeout)
+        .build()
+        .unwrap_or_else(|error| {
+            tracing::warn!(%error, "cannot build the REST client with timeouts; using the default");
+            reqwest::Client::new()
+        })
+}
+
 /// Maps a relay WebSocket URL to its HTTP bridge base URL: `wss` becomes
 /// `https`, `ws` becomes `http`, and one trailing `/` is trimmed.
 pub fn relay_ws_to_http(relay_url: &str) -> String {
@@ -67,10 +85,18 @@ impl RestClient {
     /// signing as `keys`, with an optional NIP-OA auth tag for `x-auth-tag`.
     pub fn new(relay_url: &str, keys: nostr::Keys, auth_tag: Option<String>) -> Self {
         Self {
-            http: reqwest::Client::new(),
+            http: http_client(REQUEST_TIMEOUT),
             base_url: relay_ws_to_http(relay_url),
             keys,
             auth_tag,
+        }
+    }
+
+    /// Replaces the per-attempt request timeout (15 s by default).
+    pub fn with_request_timeout(self, timeout: Duration) -> Self {
+        Self {
+            http: http_client(timeout),
+            ..self
         }
     }
 
