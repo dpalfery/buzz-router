@@ -8,3 +8,4 @@ pub mod keys;
 mod logging;
 pub mod paths;
 pub mod service;
+pub mod store;

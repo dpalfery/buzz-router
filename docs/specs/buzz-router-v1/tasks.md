@@ -480,7 +480,7 @@ Tests are written before implementation, so these public names and signatures ar
 
 The SQLite store lands here, earlier than brief §17.4 places it, because ingest and the engine both use it. Recovery behaviours stay in Milestone 4.
 
-- [ ] **2.1 SQLite store: schema and repositories**
+- [x] **2.1 SQLite store: schema and repositories**
   - **Objective:** Open and migrate `state.sqlite3` with the §9.2 DDL, and provide one typed repository per table.
   - **Files:** `crates/buzz-router/src/store/{mod.rs,schema.rs,events.rs,threads.rs,wakes.rs,posts.rs,halts.rs,cursors.rs}`, `crates/buzz-router/tests/store.rs`.
   - **Design:** §9.
@@ -504,9 +504,9 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - **cursors:** get; advance never moves backwards.
     - *RED:* compile error, unresolved `buzz_router::store::Store`.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 - [ ] **2.2 Signing keys from files**
   - **Objective:** Load `file:<path>` keys with the Unix permission check. Keychain loading comes in task 6.1.
