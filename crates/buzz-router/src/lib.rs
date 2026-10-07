@@ -5,6 +5,7 @@
 
 pub mod cli;
 pub mod clock;
+pub mod core;
 pub mod ingest;
 pub mod keys;
 mod logging;

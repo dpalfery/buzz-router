@@ -241,7 +241,7 @@ impl Ingest {
 
     /// The thread root of the message `target`: from the forwarded map, then `events`, then the
     /// relay (design 6.3, step 4).
-    async fn root_of(&self, bot: &BotName, target: &EventId) -> Option<EventId> {
+    async fn root_of(&mut self, bot: &BotName, target: &EventId) -> Option<EventId> {
         if let Some(known) = self.forwarded.get(target) {
             return Some(known.root.clone());
         }
@@ -259,7 +259,7 @@ impl Ingest {
 
     /// The author of the message `id`: from the forwarded map, then `events`, then the relay
     /// (design 6.3, step 6).
-    async fn author_of(&self, bot: &BotName, id: &EventId) -> Option<Pubkey> {
+    async fn author_of(&mut self, bot: &BotName, id: &EventId) -> Option<Pubkey> {
         if let Some(known) = self.forwarded.get(id) {
             return Some(known.author.clone());
         }
@@ -274,7 +274,7 @@ impl Ingest {
 
     /// Fetches the event `id` from `bot`'s relay with `{ids:[id]}`. Only a verified event with
     /// that id counts.
-    async fn fetch_one(&self, bot: &BotName, id: &EventId) -> Option<Event> {
+    async fn fetch_one(&mut self, bot: &BotName, id: &EventId) -> Option<Event> {
         let relay = self.relays.get(bot)?.clone();
         let nostr_id = nostr::EventId::from_hex(id.as_str()).ok()?;
         match relay.query(vec![Filter::new().id(nostr_id)]).await {

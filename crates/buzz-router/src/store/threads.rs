@@ -155,6 +155,22 @@ impl<'c> Turns<'c> {
         )?)
     }
 
+    /// Sets the turns `bot` used in the round, as a thread rebuild computes them.
+    pub fn set_used(
+        &self,
+        root_id: &EventId,
+        round_id: &EventId,
+        bot: &BotName,
+        used: u32,
+    ) -> Result<(), StoreError> {
+        self.conn.execute(
+            "INSERT INTO turns (root_id, round_id, bot, used) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(root_id, round_id, bot) DO UPDATE SET used = excluded.used",
+            params![root_id.as_str(), round_id.as_str(), bot.as_str(), used],
+        )?;
+        Ok(())
+    }
+
     /// Records that the turn-cap reaction was sent for `bot` in the round.
     pub fn set_cap_reacted(
         &self,

@@ -207,6 +207,45 @@ impl<'c> Wakes<'c> {
         )
     }
 
+    /// Replaces a queued wake's attributes and triggers after a trigger is appended
+    /// (design section 6.5).
+    pub fn update_queued(
+        &self,
+        id: &Uuid,
+        reason: &str,
+        priority: &str,
+        triggers: &str,
+        dispatch_after: i64,
+    ) -> Result<(), StoreError> {
+        self.conn.execute(
+            "UPDATE wakes SET reason = ?2, priority = ?3, triggers = ?4, dispatch_after = ?5 \
+             WHERE id = ?1",
+            params![id.to_string(), reason, priority, triggers, dispatch_after],
+        )?;
+        Ok(())
+    }
+
+    /// Dispatched wakes per bot in one round of a thread (design section 6.3, rebuild step 3).
+    pub fn started_in_round(
+        &self,
+        root_id: &EventId,
+        round_id: &EventId,
+    ) -> Result<std::collections::BTreeMap<BotName, u32>, StoreError> {
+        let mut statement = self.conn.prepare(
+            "SELECT bot, COUNT(*) FROM wakes \
+             WHERE root_id = ?1 AND round_id = ?2 AND started_at IS NOT NULL GROUP BY bot",
+        )?;
+        let rows = statement.query_map(params![root_id.as_str(), round_id.as_str()], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
+        })?;
+        let mut counts = std::collections::BTreeMap::new();
+        for row in rows {
+            let (bot, count) = row?;
+            counts.insert(parse_column("wakes.bot", BotName::new(bot))?, count);
+        }
+        Ok(counts)
+    }
+
     /// Wakes for `bot` started at or after `since_ms` (design section 9.3, assumption A10).
     pub fn count_started_since(&self, bot: &BotName, since_ms: i64) -> Result<u32, StoreError> {
         Ok(self.conn.query_row(

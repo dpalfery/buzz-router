@@ -12,13 +12,20 @@
     reason = "helpers in a shared test module fail the test by panicking; clippy.toml exempts only #[test] functions"
 )]
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use buzz_router::clock::VirtualClock;
+use buzz_router::core::{spawn_core, CoreDeps, CoreHandle};
 use buzz_router::relay::{RelayError, RelayPort};
+use buzz_router::store::Store;
 use buzz_sdk::ThreadRef;
+use chrono::{DateTime, TimeZone, Utc};
 use nostr::{Event, EventBuilder, Filter, Keys, Kind, SecretKey, Tag, Timestamp};
+use router_core::config::{parse_roster, parse_router};
+use router_core::ids::{BotName, ChannelId};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
@@ -107,6 +114,115 @@ pub fn raw_event(author: &Keys, kind: u16, text: &str, tags: &[&[&str]], created
         .custom_created_at(Timestamp::from(created_at))
         .sign_with_keys(author)
         .unwrap()
+}
+
+/// The roster bots every test core serves. All are local and members of [`channel`].
+pub const BOTS: [&str; 3] = ["A", "B", "C"];
+
+/// The relay URL in the test `router.toml`. Nothing connects to it.
+pub const RELAY_URL: &str = "ws://127.0.0.1:9";
+
+/// The virtual wall-clock start of every test core: 2026-10-05T15:00:00Z, outside default quiet
+/// hours.
+pub fn base_time() -> DateTime<Utc> {
+    Utc.with_ymd_and_hms(2026, 10, 5, 15, 0, 0).unwrap()
+}
+
+/// [`base_time`] in unix seconds, for event `created_at` values.
+pub fn base_secs() -> u64 {
+    base_time().timestamp() as u64
+}
+
+/// A roster with owner `owner`, bots A, B and C on every channel responding to anyone, and
+/// `limits` (TOML lines) as the `[limits]` table.
+pub fn roster_toml(limits: &str) -> String {
+    let mut roster = format!(
+        "version = 1\n\n[owner]\nname = \"Owner\"\npubkeys = [\"{}\"]\ntimezone = \"UTC\"\n\n[limits]\n{limits}\n",
+        pubkey_hex("owner")
+    );
+    for name in BOTS {
+        roster.push_str(&format!(
+            "\n[[bots]]\nname = \"{name}\"\npubkey = \"{}\"\nchannels = [\"*\"]\nrespond_to = \"anyone\"\n",
+            pubkey_hex(name)
+        ));
+    }
+    roster
+}
+
+/// A `router.toml` serving every bot in [`BOTS`] with `max_concurrent` each.
+pub fn router_toml(max_concurrent: u32) -> String {
+    let mut router = format!(
+        "relay_url = \"{RELAY_URL}\"\napi_bind = \"127.0.0.1:47821\"\ntailnet_bind = \"\"\npublic_url = \"\"\nroster_path = \"roster.toml\"\n"
+    );
+    for name in BOTS {
+        router.push_str(&format!(
+            "\n[[bots]]\nname = \"{name}\"\nkey = \"keychain\"\nauth_tag = \"\"\nmax_concurrent = {max_concurrent}\n\n[bots.adapter]\ntype = \"command\"\ncommand = [\"agent\"]\ncwd = \"~/fixture\"\nenv = {{}}\nprompt_mode = \"stdin\"\nreply_mode = \"stdout\"\nprompt_template = \"\"\n"
+        ));
+    }
+    router
+}
+
+/// Writes to the database before a test core starts.
+pub type Seed = Box<dyn FnOnce(&Store)>;
+
+/// How to build a test core.
+pub struct TestCoreOptions {
+    /// The `[limits]` table of the roster.
+    pub limits: String,
+    /// Each bot's `max_concurrent`.
+    pub max_concurrent: u32,
+    /// Runs against the database before the core starts.
+    pub seed: Option<Seed>,
+}
+
+impl Default for TestCoreOptions {
+    fn default() -> Self {
+        Self {
+            limits: String::new(),
+            max_concurrent: 1,
+            seed: None,
+        }
+    }
+}
+
+/// A core with the default options.
+pub fn spawn_test_core() -> (CoreHandle, FakeRelay, Store) {
+    spawn_test_core_with(TestCoreOptions::default())
+}
+
+/// A core over a temporary file database, serving bots A, B and C through one [`FakeRelay`], on a
+/// [`VirtualClock`] starting at [`base_time`]. Call it inside `#[tokio::test(start_paused = true)]`.
+/// The returned store is a separate connection to the same database, for seeding and assertions.
+pub fn spawn_test_core_with(options: TestCoreOptions) -> (CoreHandle, FakeRelay, Store) {
+    let dir = tempfile::tempdir().unwrap().keep();
+    let path = dir.join("state.sqlite3");
+    let store = Store::open(&path).unwrap();
+    if let Some(seed) = options.seed {
+        seed(&store);
+    }
+    let roster = parse_roster(&roster_toml(&options.limits)).unwrap();
+    let config = parse_router(&router_toml(options.max_concurrent), &roster).unwrap();
+    let relay = FakeRelay::new();
+    let mut relays: BTreeMap<BotName, Arc<dyn RelayPort>> = BTreeMap::new();
+    let mut keys_by_bot = BTreeMap::new();
+    let mut memberships = BTreeMap::new();
+    for name in BOTS {
+        let bot = BotName::new(name).unwrap();
+        relays.insert(bot.clone(), Arc::new(relay.clone()));
+        keys_by_bot.insert(bot.clone(), keys(name));
+        memberships.insert(bot, BTreeSet::from([ChannelId::from(channel())]));
+    }
+    let handle = spawn_core(CoreDeps {
+        store: Store::open(&path).unwrap(),
+        ingest_store: Store::open_read_only(&path).unwrap(),
+        roster,
+        config,
+        clock: Arc::new(VirtualClock::new(base_time())),
+        relays,
+        keys: keys_by_bot,
+        memberships,
+    });
+    (handle, relay, store)
 }
 
 /// A hook called with each event as `FakeRelay` receives a publish, before it is recorded.

@@ -723,7 +723,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
   - [x] GREEN
   - [x] REFACTOR
 
-- [ ] **3.2 Core actor, clock, snapshot building, applying results, thread rebuild**
+- [x] **3.2 Core actor, clock, snapshot building, applying results, thread rebuild**
   - **Objective:** Implement the core actor loop, `Clock`, building the snapshot, the transactional apply of `RouteResult`, the ⏸️-once rule, budget counters, cursor advance and `RebuildThread`.
   - **Files:**
     - `crates/buzz-router/src/clock.rs`, `crates/buzz-router/src/core/{mod.rs,apply.rs}`;
@@ -746,9 +746,9 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       7. Wakes started 59 minutes and 61 minutes ago give an hourly count of 1 and a daily count of 2.
     - *RED:* compile error, unresolved `buzz_router::core::spawn_core`.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 - [ ] **3.3 Wake queue, coalescing, debounce and scheduling**
   - **Objective:** Implement the per-bot queue, coalescing, A9 attributes, `dispatch_after`, and `schedule()` with priority, FIFO and `max_concurrent`.
