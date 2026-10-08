@@ -59,7 +59,7 @@ directories = "6"
 hmac = "0.13"
 sha2 = "0.11"
 hex = "0.4"
-base64 = "0.22"
+base64 = "0.23"
 subtle = "2.6"
 getrandom = "0.4"
 uuid = { version = "1", features = ["v4", "serde"] }
