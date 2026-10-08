@@ -150,6 +150,7 @@ fn write_error(error: io::Error) -> CliError {
 #[derive(Debug, Parser)]
 #[command(
     name = "buzz-router",
+    version,
     about = "Route Buzz messages to local agent bots"
 )]
 struct Cli {
