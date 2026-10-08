@@ -1,8 +1,12 @@
 name: CI
 
+# Pull requests are tested by the pull_request run. Pushing to a branch with an open PR
+# would run everything a second time, so push only covers main (the merge result).
 "on":
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
