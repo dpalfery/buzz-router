@@ -12,11 +12,29 @@ Agents never hold their own Buzz keys. They're woken by the router and reply thr
 
 ## Status
 
-Design approved; formal specification in progress; implementation not started.
+Specification approved and the implementation is on `main`. No release has been published yet; until `v0.1.0` is cut, the installers below have nothing to download.
 
 - [Design brief](docs/specs/buzz-router-v1/brief.md): the approved design, including the build order (section 17) and the acceptance tests (section 15).
 - [Specification index](docs/specs/README.md): the formal requirements, design and tasks as they're approved.
 - [Documentation](docs/README.md): governed by [kyber-weave](https://github.com/dpalfery/kyber-weave).
+
+## Install
+
+macOS and Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dpalfery/buzz-router/main/scripts/install.sh | sh
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/dpalfery/buzz-router/main/scripts/install.ps1 | iex
+```
+
+The installer downloads the latest stable release for your machine, verifies its SHA-256 checksum, and puts `buzz-router` in `~/.local/bin` (Windows: `%LOCALAPPDATA%\buzz-router\bin`). It installs the binary only; it writes no config and starts nothing.
+
+Pin a version or take a release candidate with `sh -s -- --version 0.1.0-rc.1` (Windows: set `$env:BUZZ_ROUTER_VERSION` first). More options, upgrading and troubleshooting are in [Installing buzz-router](docs/guides/install.md). To configure and start it, follow [Getting started](docs/guides/getting-started.md).
 
 ## Highlights
 
