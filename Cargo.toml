@@ -18,7 +18,7 @@ license = "Apache-2.0"
 # Buzz, pinned to the reference commit (AGENTS.md). Never modified.
 buzz-core = { git = "https://github.com/block/buzz", rev = "f0eb5575ffc9d5f57af4ed3f574529d997c83a0d" }
 buzz-sdk = { git = "https://github.com/block/buzz", rev = "f0eb5575ffc9d5f57af4ed3f574529d997c83a0d" }
-nostr = "0.45"
+nostr = "0.44"
 
 # Async runtime, WebSocket, HTTP
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "io-util", "signal", "process"] }
