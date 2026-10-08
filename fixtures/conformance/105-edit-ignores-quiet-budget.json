@@ -1,0 +1,22 @@
+{
+  "case": 105,
+  "requirement": "16.3",
+  "title": "O edits a message to add a p tag for B during quiet hours, with B past its hourly and daily wakes",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-06T02:00:00Z",
+  "quiet": ["A", "B", "C"],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {"B": {"hour": 20, "day": 100}},
+  "thread": {"root": "o1", "participants": ["A"], "discussion": false,
+             "round_id": "o1", "round_mode": "direct", "turns_used": {"A": 1}},
+  "edit_target": {"message": "o1"},
+  "event": {"label": "e1", "author": "O", "kind": 40003, "content": "status?", "p": ["B"]},
+  "expect": {
+    "control": null,
+    "decisions": [{"wake": {"bot": "B", "reason": "mention", "priority": "owner", "debounce": false}}],
+    "thread_update": {"add_participants": ["B"]},
+    "wake_mode": "direct"
+  }
+}

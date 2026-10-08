@@ -1,0 +1,105 @@
+[package]
+name = "buzz-router"
+description = "The buzz-router daemon and CLI: relay client, wake engine, adapters, store and HTTP API"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+license.workspace = true
+
+# The library target is `buzz_router` (src/lib.rs, holding every module). The binary
+# `buzz-router` (src/main.rs) only calls `buzz_router::cli::main()`.
+
+[dependencies]
+# Keyring pin (task 1.1, criterion 4). Verified 2026-10-05 against the crate sources and with a
+# probe program.
+#
+# * `keyring` 4.2.0 is the latest major (MSRV 1.88). Its API moved to `keyring-core` 1.0.0.
+#   `keyring` 4.x names two aggregate features, `v1` (default) and `cli` (every store plus
+#   extras), and also exposes each store crate as its own feature: android-native-keyring-store,
+#   apple-native-keyring-store, db-keystore, dbus-secret-service-keyring-store,
+#   linux-keyutils-keyring-store, windows-native-keyring-store and
+#   zbus-secret-service-keyring-store. It has no `keyring::mock` and none of the 3.x feature
+#   names (apple-native, windows-native, sync-secret-service).
+# * Feature `v1` is the platform set: it enables apple-native-keyring-store/keychain,
+#   windows-native-keyring-store and zbus-secret-service-keyring-store, which resolve to:
+#     - macOS:   apple-native-keyring-store 1.0.2 (feature `keychain`, Keychain Services)
+#     - Windows: windows-native-keyring-store 1.1.0 (Credential Manager)
+#     - Linux:   zbus-secret-service-keyring-store 1.0.1 (feature `crypto-rust`, Secret Service)
+#   The Linux store calls `secret_service::blocking`, so every call is synchronous and needs no
+#   tokio runtime. It is pure Rust, so there is no libdbus system dependency. `default-features
+#   = false` plus `v1` keeps the choice explicit and leaves out `cli`. The alternative Linux
+#   store, feature `dbus-secret-service-keyring-store` (libdbus, also synchronous), is selectable
+#   but not used: it would add a libdbus system dependency (or a vendored build) for no gain.
+# * `keyring::Entry` is not injectable. Its first `Entry::new` or `Entry::store_status` call runs
+#   a one-time `set_default_store(<native store>)`. A mock installed before that call is
+#   overwritten by the native store (probe result), and on a headless Linux runner a failed
+#   init makes `Entry::new` return `NoDefaultStore`. So the code uses `keyring_core::Entry`.
+# * Arrangement for keys.rs (tasks 2.2 and 6.1):
+#     - Production: one startup function calls `keyring::Entry::store_status()` once to install
+#       the native store, then every entry is a `keyring_core::Entry` created with service
+#       `buzz-router` and the bot name as the account.
+#     - Tests: install the mock with `keyring_core::set_default_store(keyring_core::mock::Store::new()?)`
+#       and never call the production installer in that process, because it would replace the
+#       mock. `keyring_core::mock` is always compiled (no feature needed).
+# * Linux calls block, so async code reaches them through `spawn_blocking`.
+keyring = { workspace = true }
+keyring-core = { workspace = true }
+
+# The CLI (task 1.11). `router-core` is a path dependency because the root manifest's
+# `[workspace.dependencies]` holds exactly the design 3.2 table and no workspace-internal crate.
+router-core = { path = "../router-core" }
+buzz-sdk = { workspace = true }
+nostr = { workspace = true }
+clap = { workspace = true }
+directories = { workspace = true }
+fs2 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }
+tracing-subscriber = { workspace = true }
+# SQLite store (task 2.1).
+rusqlite = { workspace = true }
+# Relay I/O (tasks 2.3+): async runtime, REST client, encoding and hashing.
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+futures-util = { workspace = true }
+reqwest = { workspace = true }
+base64 = { workspace = true }
+sha2 = { workspace = true }
+# Ingest and the core (tasks 2.6+): the clock and logging.
+chrono = { workspace = true }
+tracing = { workspace = true }
+# Logging file output (task 4.4): daily-rotating JSON logs under <data-dir>/logs/.
+tracing-appender = { workspace = true }
+# The wake queue and dispatch (task 3.3): adapter cancellation and wake tokens.
+tokio-util = { workspace = true }
+getrandom = { workspace = true }
+# The command adapter (task 3.5): process groups (Unix) and Job Objects (Windows).
+command-group = { workspace = true }
+# The webhook adapter (task 5.1): request signing.
+hmac = { workspace = true }
+# The HTTP API (task 3.6): the routers and the constant-time admin-token check.
+axum = { workspace = true }
+subtle = { workspace = true }
+rustls = { workspace = true }
+
+# The CLI stop fallback (task 3.8): killing a wake's process group.
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true }
+
+[dev-dependencies]
+sha2 = { workspace = true }
+hex = { workspace = true }
+tempfile = { workspace = true }
+# axum serves the mock relay in tests (task 2.3).
+axum = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
+# The HTTP API tests (task 3.6).
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+
+[lints]
+workspace = true

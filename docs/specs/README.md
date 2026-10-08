@@ -4,7 +4,7 @@ title: Specifications
 doc-type: index
 status: draft
 owner: 'dpalfery'
-last-reviewed: 2026-10-05
+last-reviewed: 2026-10-07
 ---
 
 # Specifications
@@ -18,7 +18,7 @@ Each specification gets a folder `docs/specs/<feature>/` containing `requirement
 
 | Specification | Status | Requirements | Design | Tasks | Goal |
 |---|---|---|---|---|---|
-| [buzz-router-v1](buzz-router-v1/) | Ready | [Approved](buzz-router-v1/requirements.md) | [Approved](buzz-router-v1/design.md) | [Approved](buzz-router-v1/tasks.md) | One shared Buzz listener, router and gatekeeper for every bot machine, replacing the per-bot listeners. Input: [design brief](buzz-router-v1/brief.md). |
+| [buzz-router-v1](buzz-router-v1/) | Implementation complete (tasks 1.1–8.1); closeout open — 3-OS CI, release dry run and docs migration pending; [PR #1](https://github.com/dpalfery/buzz-router/pull/1), [progress](buzz-router-v1/tasks.md#progress) | [Approved](buzz-router-v1/requirements.md) | [Approved](buzz-router-v1/design.md) | [Approved](buzz-router-v1/tasks.md) | One shared Buzz listener, router and gatekeeper for every bot machine, replacing the per-bot listeners. Input: [design brief](buzz-router-v1/brief.md). |
 
 ## Archive
 

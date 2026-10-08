@@ -1,0 +1,19 @@
+{
+  "case": 28,
+  "requirement": "4.6",
+  "title": "A publishes a status-tagged note whose text mentions B",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "event": {"label": "a1", "author": "A", "kind": 9, "content": "@B on it, this will take a bit.",
+            "tags": [["buzz-router", "0.1.0", "status"]]},
+  "expect": {
+    "control": null,
+    "decisions": [],
+    "diagnostics": ["status_tag_ignored"]
+  }
+}

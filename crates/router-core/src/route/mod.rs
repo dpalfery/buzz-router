@@ -1,0 +1,350 @@
+//! The routing types and the `route` function (design section 5.2, requirement 5).
+//!
+//! `route` is pure. It does no I/O and reads no clock except its `now` argument. It routes an
+//! event by the rules of design section 5.5, by kind and author class:
+//!
+//! - an event tagged as a router status note wakes nobody, whoever wrote it (requirement 4.5);
+//! - the owner's kind-9 message: `owner` (the owner rules, requirements 6 to 10);
+//! - a roster bot's kind-9 message: `bot` (requirements 11 to 13);
+//! - a human's or a foreign bot's kind-9 message: `human` (requirements 14 and 15);
+//! - the owner's kind-40003 edit: `edit` (requirement 16). An edit from anyone else, and any
+//!   other kind, gets the empty result (requirement 16.5).
+
+mod bot;
+mod edit;
+mod gates;
+mod human;
+mod owner;
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+
+use crate::classify::{classify, AuthorClass};
+use crate::config::{Bot, ChannelScope, Roster};
+use crate::ids::{BotName, ChannelId, EventId, Pubkey};
+use crate::thread::{RoundMode, ThreadPos, ThreadState};
+
+/// The kind of a Buzz stream message (9).
+pub const KIND_MESSAGE: u16 = buzz_core::kind::KIND_STREAM_MESSAGE as u16;
+/// The kind of an edit of a stream message (40003).
+pub const KIND_EDIT: u16 = buzz_core::kind::KIND_STREAM_MESSAGE_EDIT as u16;
+
+/// A signature-verified kind-9 or kind-40003 event. The binary builds it from `nostr::Event`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InEvent {
+    /// The event id.
+    pub id: EventId,
+    /// The author's public key.
+    pub pubkey: Pubkey,
+    /// The event kind.
+    pub kind: u16,
+    /// Creation time in unix seconds.
+    pub created_at: i64,
+    /// The channel, from the `h` tag. Events without one are not routed.
+    pub channel: ChannelId,
+    /// The message text.
+    pub content: String,
+    /// The raw tag arrays.
+    pub tags: Vec<Vec<String>>,
+}
+
+/// Halts set by `stop` (requirement 29).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Halts {
+    /// Every bot is halted.
+    pub all: bool,
+    /// These bots are halted.
+    pub bots: BTreeSet<BotName>,
+}
+
+/// A bot's dispatched wakes over the trailing hour and day (assumption A10).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WakeCounts {
+    /// Wakes in the trailing 60 minutes.
+    pub hour: u32,
+    /// Wakes in the trailing 24 hours.
+    pub day: u32,
+}
+
+/// The message an edit event edits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EditTarget {
+    /// The edited kind-9 message.
+    pub message_id: EventId,
+}
+
+/// Everything `route` needs to know besides the event and the time (requirement 5.4).
+#[derive(Debug)]
+pub struct Snapshot<'a> {
+    /// The roster.
+    pub roster: &'a Roster,
+    /// The bots this router serves.
+    pub local_bots: &'a BTreeSet<BotName>,
+    /// Local bots that are members of the event's channel (DD-5).
+    pub local_members: BTreeSet<BotName>,
+    /// The current halts.
+    pub halts: &'a Halts,
+    /// The event's thread. For an edit, the thread of the edited message.
+    pub thread: Option<ThreadState>,
+    /// The author of the reply parent, when the parent is not the root.
+    pub parent_author: Option<Pubkey>,
+    /// The edited message, for an edit event.
+    pub edit_target: Option<EditTarget>,
+    /// Per-bot trailing wake counts.
+    pub wake_counts: &'a BTreeMap<BotName, WakeCounts>,
+    /// Bots inside quiet hours at `now`.
+    pub quiet: BTreeSet<BotName>,
+}
+
+/// What `route` decided about one event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RouteResult {
+    /// A control command found in the event.
+    pub control: Option<Control>,
+    /// At most one decision per local bot, sorted by bot name.
+    pub decisions: Vec<Decision>,
+    /// How the event changes its thread's state.
+    pub thread_update: ThreadUpdate,
+    /// The round mode carried by this event's wakes (DD-3).
+    pub wake_mode: RoundMode,
+    /// Notes for the caller to log, such as roster drift.
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+/// A control command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Control {
+    /// Halt wakes.
+    Stop(Scope),
+    /// Lift a halt.
+    Resume(Scope),
+    /// Cancel running wakes.
+    Cancel(Scope),
+}
+
+/// The bots a control command applies to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Scope {
+    /// Every bot.
+    All,
+    /// The named bots.
+    Bots(BTreeSet<BotName>),
+}
+
+/// What to do about one bot for one event (requirement 5.3).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Decision {
+    /// Wake the bot.
+    Wake {
+        /// The bot to wake.
+        bot: BotName,
+        /// Why it is woken.
+        reason: Reason,
+        /// How the wake queues.
+        priority: Priority,
+        /// Whether the wake waits out the discussion debounce.
+        debounce: bool,
+    },
+    /// Do not wake the bot.
+    Suppress {
+        /// The bot.
+        bot: BotName,
+        /// Why not.
+        why: SuppressWhy,
+    },
+}
+
+/// Why a bot is woken.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Reason {
+    /// Named in the message.
+    Mention,
+    /// The owner wrote `@everyone`.
+    Everyone,
+    /// The message replies to the bot's own message.
+    ReplyTarget,
+    /// The bot takes part in the thread.
+    Participant,
+    /// The channel's default bot.
+    DefaultBot,
+    /// Another bot's post in a discussion.
+    Discussion,
+    /// Named in a bot's message.
+    BotMention,
+}
+
+/// How a wake queues. `Owner > Human > Bot`, so the variants run from lowest to highest and the
+/// derived order is the queueing order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Priority {
+    /// Caused by a bot's message.
+    Bot,
+    /// Caused by a human's message.
+    Human,
+    /// Caused by the owner's message.
+    Owner,
+}
+
+/// Why a bot that would be woken is not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SuppressWhy {
+    /// The bot or all bots are halted.
+    Halted,
+    /// The bot used its turns for the round.
+    Cap,
+    /// The bot is inside quiet hours.
+    Quiet,
+    /// The bot used its hourly or daily wakes.
+    Budget,
+    /// The author is not one the bot responds to.
+    RespondTo,
+}
+
+/// A thread created by a top-level post.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewThread {
+    /// The thread root.
+    pub root_id: EventId,
+    /// The thread's channel.
+    pub channel_id: ChannelId,
+}
+
+/// A new round in a thread.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewRound {
+    /// The event that starts the round.
+    pub round_id: EventId,
+    /// The round's mode.
+    pub mode: RoundMode,
+    /// When the round starts, in unix seconds.
+    pub started_at: i64,
+}
+
+/// How an event changes its thread's state (requirement 5.2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThreadUpdate {
+    /// The thread to create, for a top-level post.
+    pub create: Option<NewThread>,
+    /// Bots that join the participants.
+    pub add_participants: BTreeSet<BotName>,
+    /// Whether the thread becomes a discussion.
+    pub set_discussion: bool,
+    /// The round to start.
+    pub new_round: Option<NewRound>,
+}
+
+/// A note `route` leaves for its caller.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Diagnostic {
+    /// A foreign bot carries an `auth` tag from one of the owner's keys, so it probably belongs in
+    /// the roster (requirement 4.4).
+    RosterDrift {
+        /// The foreign bot's key.
+        pubkey: Pubkey,
+    },
+    /// The event is tagged as a router status note and wakes nobody (requirement 4.5).
+    StatusTagIgnored,
+    /// An owner edit arrived without the message it edits or that message's thread, so it wakes
+    /// nobody (design 5.5, `owner_edit`, step 1).
+    EditTargetUnknown,
+}
+
+/// Decides what to do about one event.
+///
+/// An event tagged `["buzz-router", version, "status"]` gets the empty result and a
+/// [`Diagnostic::StatusTagIgnored`], whatever its author or content (requirement 4.5). Otherwise
+/// the event is routed by the rules of design 5.5, by kind and author class. Every event those
+/// rules do not cover gets the empty result: no decisions and no thread changes, in `Direct`
+/// mode.
+pub fn route(ev: &InEvent, snap: &Snapshot<'_>, _now: DateTime<Utc>) -> RouteResult {
+    if has_status_tag(ev) {
+        return RouteResult {
+            diagnostics: vec![Diagnostic::StatusTagIgnored],
+            ..empty_result()
+        };
+    }
+    match (ev.kind, classify(ev, snap.roster)) {
+        (KIND_EDIT, AuthorClass::Owner) => edit::owner_edit(ev, snap),
+        (KIND_EDIT, _) => empty_result(),
+        (KIND_MESSAGE, AuthorClass::Owner) => owner::owner_message(ev, snap),
+        (KIND_MESSAGE, AuthorClass::Bot(author)) => bot::bot_message(ev, snap, &author),
+        (KIND_MESSAGE, AuthorClass::Human) => human::human_message(ev, snap),
+        (KIND_MESSAGE, AuthorClass::ForeignBot { owner_is_ours }) => {
+            human::foreign_message(ev, snap, owner_is_ours)
+        }
+        _ => empty_result(),
+    }
+}
+
+/// Whether `ev` carries the tag `["buzz-router", <version>, "status"]` that the router puts on
+/// its own status notes (requirement 4.5, design 5.5).
+fn has_status_tag(ev: &InEvent) -> bool {
+    ev.tags.iter().any(|tag| {
+        matches!(
+            tag.as_slice(),
+            [name, _version, kind] if name == "buzz-router" && kind == "status"
+        )
+    })
+}
+
+/// The result for an event that wakes nobody and changes nothing.
+fn empty_result() -> RouteResult {
+    RouteResult {
+        control: None,
+        decisions: Vec::new(),
+        thread_update: ThreadUpdate {
+            create: None,
+            add_participants: BTreeSet::new(),
+            set_discussion: false,
+            new_round: None,
+        },
+        wake_mode: RoundMode::Direct,
+        diagnostics: Vec::new(),
+    }
+}
+
+/// Whether `bot` covers `channel` (design 5.5, DD-5).
+///
+/// A local bot covers it when it is a member of the channel and its `channels` is `*` or lists the
+/// channel. A bot that is not local matters only as a participant, so it covers the channel only
+/// when its `channels` lists it explicitly. A bot that is not on the roster covers nothing.
+fn covers(bot: &BotName, channel: ChannelId, snap: &Snapshot<'_>) -> bool {
+    let Some(entry) = snap.roster.bots.get(bot) else {
+        return false;
+    };
+    let lists_channel =
+        matches!(&entry.channels, ChannelScope::Only(channels) if channels.contains(&channel));
+    if snap.local_bots.contains(bot) {
+        snap.local_members.contains(bot)
+            && (lists_channel || matches!(entry.channels, ChannelScope::All))
+    } else {
+        lists_channel
+    }
+}
+
+/// Whether `route` may decide something about `bot` for an event in `channel`: it is local and
+/// covers the channel (requirements 5.7 and 5.8). Only considered bots get decisions.
+fn consider(bot: &BotName, channel: ChannelId, snap: &Snapshot<'_>) -> bool {
+    snap.local_bots.contains(bot) && covers(bot, channel, snap)
+}
+
+/// The roster bot a message addresses by replying to its message: the reply-target rule of
+/// design 5.5 (requirements 8.1, 8.2 and 14.1).
+///
+/// An event that is not a reply, and a reply whose parent is the thread root, have none: a reply
+/// to the root is a reply to the thread, not to a bot. Otherwise it is the roster bot whose key
+/// the snapshot gives as the parent's author.
+fn reply_target<'r>(pos: &ThreadPos, snap: &Snapshot<'r>) -> Option<&'r Bot> {
+    let ThreadPos::Reply { root, parent } = pos else {
+        return None;
+    };
+    if parent == root {
+        return None;
+    }
+    let author = snap.parent_author.as_ref()?;
+    snap.roster.bots.values().find(|bot| bot.pubkey == *author)
+}

@@ -1,0 +1,152 @@
+name: CI
+
+"on":
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  security:
+    name: Security
+    uses: ./.github/workflows/security-scan.yml
+    permissions:
+      contents: read
+
+  lint:
+    name: Lint (fmt)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --locked --no-fail-fast
+
+      - name: Release build
+        run: cargo build --release --locked -p buzz-router --bin buzz-router
+
+      - name: Ensure router-core is tokio-free
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$(cargo tree -p router-core -e normal -i tokio 2>/dev/null || true)"
+          if [ -n "$out" ]; then
+            echo "router-core depends on tokio, which is forbidden:" >&2
+            echo "$out" >&2
+            exit 1
+          fi
+          echo "router-core is tokio-free."
+
+      - name: Ensure no openssl-sys dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$(cargo tree -p buzz-router -e normal -i openssl-sys 2>/dev/null || true)"
+          if [ -n "$out" ]; then
+            echo "buzz-router depends on openssl-sys, but TLS must be rustls-only (R58.2):" >&2
+            echo "$out" >&2
+            exit 1
+          fi
+          echo "no openssl-sys in buzz-router's normal dependency closure."
+
+      - name: Ensure SQLite is bundled
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$(cargo tree -p buzz-router -e features -i libsqlite3-sys 2>/dev/null || true)"
+          if ! printf '%s\n' "$out" | grep -q 'feature "bundled"'; then
+            echo "libsqlite3-sys is missing the bundled feature (R58.2):" >&2
+            echo "$out" >&2
+            exit 1
+          fi
+          echo "libsqlite3-sys is bundled."
+
+  e2e:
+    name: E2E (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    # Linux only (design DA-1): the macOS and Windows runners have no Linux container
+    # engine for the local Buzz relay, so those legs could never pass.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+    env:
+      BUZZ_E2E_RELAY_URL: ws://127.0.0.1:3000
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Build the tests
+        run: cargo test -p buzz-router --locked --test 'e2e_*' --no-run
+
+      # Checks out Buzz at the pinned rev, runs `docker compose up -d postgres redis`,
+      # migrates, and runs buzz-relay with `.env.example` plus the task 2.9 test-identity
+      # auth settings. The published image for the pinned rev is used when available;
+      # otherwise the relay is built from the checkout.
+      - name: Start the local Buzz relay
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! scripts/e2e-relay.sh up; then
+            scripts/e2e-relay.sh down || true
+            scripts/e2e-relay.sh up --build
+          fi
+
+      - name: End-to-end tests
+        shell: bash
+        run: BUZZ_E2E=1 cargo test -p buzz-router --locked --test 'e2e_*' -- --ignored --test-threads=1
+
+      - name: Relay log
+        if: failure()
+        shell: bash
+        run: scripts/e2e-relay.sh logs || true
+
+      - name: Stop the local Buzz relay
+        if: always()
+        shell: bash
+        run: scripts/e2e-relay.sh down || true
+
+  msrv:
+    name: MSRV (1.88)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install Rust 1.88
+        run: rustup toolchain install 1.88 --profile minimal
+
+      - name: Check with Rust 1.88
+        run: cargo +1.88 check --workspace --locked

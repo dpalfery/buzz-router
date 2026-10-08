@@ -120,7 +120,8 @@ Unless noted, versions are those Buzz's workspace pins at the reference commit (
 | `rustls` | `0.23`, `default-features = false`: `ring`, `std` | binary | install the ring provider at startup, as `buzz-acp` does (`crates/buzz-acp/src/lib.rs` `tokio_main`) |
 | `axum` | `0.8` (default features) | binary | HTTP API |
 | `rusqlite` | `0.40` (verified 0.40.2): `bundled` | binary | no system SQLite (R58.2) |
-| `keyring` | current major: macOS native, Windows native and Linux Secret Service backends | binary | **Version not verified.** The crates.io lookup was blocked in this session. Task 1 pins the latest major and confirms its backend feature names. |
+| `keyring` | `4.2.0`, `default-features = false`, features `["v1"]` | binary | macOS Keychain (`apple-native-keyring-store`), Windows Credential Manager (`windows-native-keyring-store`) and Linux Secret Service over D-Bus (`zbus-secret-service-keyring-store`, pure Rust, synchronous). Owner decision O6. |
+| `keyring-core` | `1` (locked `1.0.0`) | binary | Provides `Entry` and the mock store. Production installs the native store once with `keyring::Entry::store_status()`, then creates every entry as a `keyring_core::Entry`; tests install `keyring_core::mock::Store` instead. Owner decision O6. |
 | `command-group` | `5.0.1` (verified): `with-tokio` | binary | process group (Unix) and Job Object (Windows) |
 | `nix` | `0.31`: `signal`, `process` (Unix only, `cfg(unix)`) | binary | `killpg` for the CLI stop fallback (section 6.7) |
 | `chrono` | `0.4`: `serde` | core, binary | `DateTime<Utc>` |
@@ -169,7 +170,7 @@ Requirements: 1, 2, 3, 22.3; assumptions A2, A3, A15.
 `buzz-router/src/paths.rs` resolves two directories with `directories::BaseDirs`:
 
 - `config_dir = BaseDirs::config_dir()/"buzz-router"`. That gives `~/Library/Application Support/buzz-router` on macOS, `~/.config/buzz-router` on Linux (honouring `XDG_CONFIG_HOME`), and `%APPDATA%\buzz-router` on Windows (R3.1–3.4).
-- `data_dir = BaseDirs::data_local_dir()/"buzz-router"`. That gives `~/Library/Application Support/buzz-router`, `~/.local/share/buzz-router`, and `%LOCALAPPDATA%\buzz-router` (DD-11). The data directory holds `state.sqlite3`, `admin.token`, `logs/`, and `wakes/<wake_id>/` scratch directories (R3.5).
+- `data_dir = BaseDirs::data_local_dir()/"buzz-router"`. That gives `~/Library/Application Support/buzz-router`, `~/.local/share/buzz-router`, and `%LOCALAPPDATA%\buzz-router` (DD-11). The data directory holds `state.sqlite3`, `admin.token`, `router.lock`, `logs/`, and `wakes/<wake_id>/` scratch directories (R3.5).
 - Hidden global flags `--config-dir` and `--data-dir`, and the env vars `BUZZ_ROUTER_CONFIG_DIR` and `BUZZ_ROUTER_DATA_DIR`, override both. They exist for tests and E2E only (DD-11).
 
 Configuration is read once at startup. Changes take effect on restart (A15).
@@ -260,9 +261,12 @@ The resolved types are `Roster` and `RouterConfig`:
 - `version == 1`, and `owner.timezone` parses as a `chrono_tz::Tz` (R2.3).
 - `quiet_hours` is `""` or matches `^\d{2}:\d{2}-\d{2}:\d{2}$` with valid times (R22.3).
 - Every `router.toml` bot name exists in the roster (R1.7). `key` is `keychain` or `file:<path>` (R1.8).
+- `max_concurrent` is at least 1, and a command adapter's `command` is non-empty (owner decision O2).
 
 **Rules from A3:**
 - Names and aliases are unique, case-insensitively, across the roster. Pubkeys are unique.
+- No bot is named `all`, in any ASCII case: `all` is the halt scope covering every bot (owner decision O2).
+- No two channels share an id (owner decision O2).
 - No pubkey is both an owner key and a bot key.
 - A `default_bot` that is set names a roster bot.
 - An async webhook bot requires non-empty `public_url` and `tailnet_bind`.
@@ -461,7 +465,7 @@ route(ev, snap, now):
    - else `gate([Halted, Quiet, Cap, Budget])`, and on a pass `Wake{Human, debounce:false}`.
 3. No thread update.
 
-**foreign_message** (R15): same target selection as human. Every considered target gets `Suppress(RespondTo)`.
+**foreign_message** (R15): same target selection as human, except that a foreign bot's `p` tags count as mentions of local bots (owner decision O4, Reading 1: R15.2 wins over R17.4 for foreign bots). Every considered target gets `Suppress(RespondTo)`.
 
 **owner_edit** (R16, A11):
 
@@ -524,6 +528,8 @@ Requirements: 55.2–55.4; assumption A17.
 3. Call `route`.
 4. Apply the thread update and controls, and count every `Wake` as dispatched immediately, so Cap and Budget progress realistically.
 
+The simulator never invents thread state for a root it never saw (owner decision O5): a reply under an unseen root is routed with no thread (`thread: None`), and a thread update for a thread that never started is dropped.
+
 The simulator performs no I/O.
 
 ## 6. buzz-router daemon
@@ -568,7 +574,7 @@ flowchart LR
   - `Adapter{wake_id, AdapterEvent}`
   - `PublishResult{..}`
   - `Api(ApiRequest, oneshot::Sender<ApiResponse>)`
-  - `Shutdown`
+  - `Shutdown(oneshot::Sender<()>)`, the graceful stop (section 6.9)
 
   **Test seam.** `core::spawn_core(CoreDeps) -> CoreHandle` starts the actor. `CoreDeps` carries the store, roster, router config, clock, per-bot `RelayPort`s and adapters. `CoreHandle` exposes:
   - `ingest(bot, nostr::Event, Source)`, which feeds an event through the ingest pipeline;
@@ -595,7 +601,7 @@ Requirements: 1.15, 43.4, 48, 49; assumption A14.
 
 1. Install the rustls ring provider. Init logging (section 14). Resolve paths.
 2. Load and validate the roster and `router.toml`. **On any error, print a JSON error and exit 1** (R1.15).
-3. Open SQLite and migrate (section 9). Create `admin.token` if it's missing (R43.4).
+3. Take the single-instance lock on `data_dir/router.lock` (review cycle 2 D): an exclusive OS file lock, held for the whole run and released when the process exits, so a crash never leaves a stale lock. A second `run` against the same data directory fails here with an `Other` (exit 4) JSON error (`another buzz-router is already running ...`), before the store is opened and before recovery could mark the first router's running wakes `interrupted`. Then open SQLite and migrate (section 9). Create `admin.token` if it's missing (R43.4).
 4. Load each local bot's key (section 11). A bot whose key fails to load is marked `unavailable` in `status`, isn't connected, and doesn't stop the others (DD-23).
 5. **Load halts** (R48.1 step 1).
 6. **Recover interrupted wakes** (R49): for each `wakes` row in state `running`:
@@ -616,7 +622,7 @@ Requirements: 4.1, 16.7, 18.2, 47.3, 51, 61.4.
 
 1. Parse it as `nostr::Event` and check `event.verify()`. Drop it on failure (R4.1).
 2. Ignore it unless its kind is 9 or 40003 and it has an `h` tag with a UUID (R61.3).
-3. **Dedupe.** Skip if the id is in the in-memory forwarded set (an LRU of 100 000 entries) or `events.processed_at IS NOT NULL` (R47.3, R61.4).
+3. **Dedupe.** If the id is in the in-memory forwarded set (an LRU of 100 000 entries) or `events.processed_at IS NOT NULL`, don't route it again (R47.3, R61.4). Send the core `Seen{bot, created_at}` instead, and the core moves that bot's cursor (R47.4). This keeps the cursor of a bot that shares a channel moving when another bot delivered the event first, and the core stays the only cursor writer (DD-1).
 4. **Resolve the thread:**
    - kind 9: `thread_position(tags)`;
    - kind 40003: the target is the unmarked `e` tag (`build_edit` emits `["e", <target>]`, `crates/buzz-sdk/src/builders.rs:407`). Look up its `root_id` in `events` or the forwarded map, else REST-query `{ids:[target]}` and resolve its thread (R16.7).
@@ -721,7 +727,7 @@ stateDiagram-v2
   running --> timeout: deadline
   running --> killed: stop/cancel
   running --> failed
-  running --> interrupted: found running at startup
+  running --> interrupted: found running at startup, or at shutdown
 ```
 
 **Dispatch** runs in R35.1's order:
@@ -811,7 +817,7 @@ All events are signed with the bot's `nostr::Keys` (R59.3). Publishing goes over
 
 **Reply** (R44):
 
-1. Compute mention pubkeys with `mentions_for_reply(text, roster)`. This is the same extractor, with `names` = bot names, aliases and `owner.name`. A bot name maps to its pubkey. The owner name maps to **every** owner pubkey (DD-18).
+1. Compute mention pubkeys with `mentions_for_reply(text, roster)`. This is the same extractor, with `names` = bot names, aliases and `owner.name`. A bot name maps to its pubkey. The owner name maps to **every** owner pubkey (DD-18). A bare whole-word occurrence of the owner name (no `@`, any ASCII case) maps to every owner pubkey too (owner decision O3: the T1.4 interim reading, recorded as the spec).
 2. `ThreadRef{root_event_id: root, parent_event_id: reaction target}`. `build_message`'s `thread_tags` emits the direct-reply or nested tag shape itself (`crates/buzz-sdk/src/builders.rs:178`).
 3. `buzz_sdk::builders::build_message(channel, text, Some(&thread_ref), &mentions, false, &[], &[])`, then `.tag(auth_tag)` if set, then `.tag(["buzz-router", VERSION, "reply"])`, then `.sign_with_keys(&keys)`.
 4. **Insert the `posts` row (`event_id`, bot, `wake_id`, `created_at`) before sending**, so the relay echo is never counted as unmanaged (R44.7, DD-6). Increment `RunningWake.posts`.
@@ -833,6 +839,17 @@ All events are signed with the bot's `nostr::Keys` (R59.3). Publishing goes over
 - The cadence is 3 s (`crates/buzz-acp/src/lib.rs:2879`).
 
 **Halted bots:** the API returns 423 before any publish, and the core refuses to publish a reply or status note for a halted bot from any path: stdout or sync replies arriving after a halt are discarded (R30.5).
+
+### 6.9 Shutdown (`cli/run.rs`, `core/mod.rs`)
+
+Owner decision on review finding #7; the requirements say nothing about shutdown.
+
+On ctrl-c, SIGTERM or a service stop, `run` sends the core `Shutdown` and waits for its answer. The core then:
+
+1. For each running wake, triggers its `CancellationToken`, so the WakeRunner kills the agent as a stop or deadline does (section 7.1, step 6). It ends the wake exactly as startup recovery would (section 6.2, step 6): the row becomes `interrupted`, which revokes the token, the scratch directory is deleted, and an attempt-1 owner wake is re-queued as attempt 2, otherwise ⚠️ is reacted.
+2. Waits at most `SHUTDOWN_WAKE_GRACE` (5 s) for the WakeRunners and pending publishes to finish, then answers and stops. Afterwards the tokio runtime gets 2 s more to wind down before the process exits.
+
+The backstop is `kill_on_drop` on every command-adapter spawn. A WakeRunner still running when the runtime is dropped kills its child: on Unix through tokio's `kill_on_drop`, which reaches the group leader only; on Windows through the Job Object's kill-on-close, which also fires when the router process is terminated without a signal.
 
 ## 7. Adapters (`adapter/`)
 
@@ -870,7 +887,7 @@ Before calling `run`, the WakeRunner builds the payload:
    - `.env("BUZZ_ROUTER_URL", loopback_base)`, `.env("BUZZ_ROUTER_WAKE_TOKEN", token)`, `.env("BUZZ_ROUTER_PAYLOAD", payload_path)`, and `BUZZ_ROUTER_PROMPT_FILE` in file mode;
    - then **`.env_remove("BUZZ_PRIVATE_KEY")` last**, so neither the inherited nor the configured env can supply it (R37.2, R37.3);
    - stdin piped (stdin mode) or null; stdout piped; stderr piped.
-4. Spawn with `command_group::AsyncCommandGroup::group_spawn()`, getting an `AsyncGroupChild`. That is a process group on Unix and a Job Object on Windows (R37.1). Write `<pid>` to `wakes/<id>/pid` for the CLI fallback.
+4. Spawn with `command_group::AsyncCommandGroup::group().kill_on_drop(true).spawn()`, with `kill_on_drop(true)` on the tokio command as well, getting an `AsyncGroupChild`. That is a process group on Unix and a Job Object on Windows (R37.1). Dropping it kills the child (section 6.9). Write `<pid>` to `wakes/<id>/pid` for the CLI fallback.
 5. In stdin mode, write the prompt and drop stdin (R37.5). Read stdout into a buffer capped at 65 536 bytes, **draining and discarding the rest** so the child never blocks on a full pipe (R37.6). Forward stderr line by line to `tracing::info!` with `bot` and `wake_id` (R37.10).
 6. `select!` on the child exiting or `cancel.cancelled()`. On cancel, call `child.kill()`, which kills the whole group (`killpg` or `TerminateJobObject`), then `wait()`.
 7. Report `Exited{code, stdout: trimmed}` (stdout reply mode) or `Exited{code, None}` (api reply mode). The core applies the ending table in section 6.6 (R37.7–37.9).
@@ -1067,7 +1084,7 @@ The REST client follows `buzz-acp`'s `RestClient` (`relay.rs:251–580`):
 2. Page with `until` and `before_id`, set from the oldest event of each full page, until a page returns fewer than 500 events. There is **no event cap**.
 3. Sort everything by `(created_at, id)` ascending and send it to ingest as `Backfill`.
 
-With no cursor, backfill is skipped and the cursor starts at connect time (A14).
+With no cursor, backfill is skipped and the cursor starts at connect time (A14). If the cursor can't be read, the connection drops and redials (section 10.5) rather than skipping backfill, so no live event can move the cursor past history that was never fetched.
 
 **Thread fetch and context queries** use the same paging.
 
@@ -1086,6 +1103,8 @@ A RelayConn failure affects only its own bot. While the socket is down, publishe
 ## 11. Keys (`keys.rs`)
 
 Requirements: 54, 59; assumptions A3, A16.
+
+Pinned versions (owner decision O6): `keyring` 4.2.0 (feature `v1`) with `keyring-core` 1.0.0; see §3.2.
 
 - `KeySource::Keychain` uses `keyring::Entry::new("buzz-router", <bot name>)`, so the service is `buzz-router` and the account is the bot name (DD-20). `get_password()` returns the nsec, and `nostr::Keys::parse` loads it (R59.1).
 - `KeySource::File(path)`:
@@ -1169,11 +1188,13 @@ The router writes its own service definitions and drives the OS tools through `s
 **Windows** (R56.4):
 - **Install:** write a Task Scheduler XML to `data_dir\buzz-router-task.xml` with:
   - a `LogonTrigger` for the current user;
+  - a `TimeTrigger` repeating every minute indefinitely (`Repetition` `Interval PT1M`, no `Duration`, `StopAtDurationEnd false`), so a crashed router is restarted within about a minute even when `RestartOnFailure` does not fire for a non-zero exit (R56.4);
   - `Principal` `LogonType=InteractiveToken`, `RunLevel=LeastPrivilege`, so it runs as the user and the Credential Manager works;
   - `Settings`: `RestartOnFailure` (`Interval PT1M`, `Count 999`), `ExecutionTimeLimit PT0S`, `MultipleInstancesPolicy IgnoreNew`, `DisallowStartIfOnBatteries false`, `StopIfGoingOnBatteries false`;
   - `Exec` = `<exe> run`.
 
   Then run `schtasks /Create /TN buzz-router /XML <file> /F` and `schtasks /Run /TN buzz-router`.
+- Only one router may run per data directory: `run` holds the `data_dir/router.lock` lock from section 6.2 step 3, and a second copy (a hand-started `run` racing the every-minute trigger, or vice versa) exits 4 before touching the store. Because the trigger restarts the router within about a minute, ending the task or killing the process is not a lasting stop: uninstall or disable the task to stop the router.
 - **Uninstall:** `schtasks /End` and `schtasks /Delete /TN buzz-router /F`.
 - **Status:** `schtasks /Query /TN buzz-router /FO LIST /V`.
 - Task 1 must confirm on `windows-latest` that a non-zero exit triggers `RestartOnFailure`.
@@ -1184,7 +1205,7 @@ Requirements: 20.4, 21.4, 51.2, 57.
 
 - **router-core:** `ConfigErrors(Vec<ConfigIssue{path, message}>)` and `ParseError`. `route` is infallible: malformed input yields an empty result plus a `Diagnostic`.
 - **buzz-router:** each module has its own `thiserror` enum: `StoreError`, `RelayError`, `AdapterError`, `ApiError` (implements `IntoResponse`), `KeyError` and `ServiceError`.
-  - `CliError { kind: ErrorKind, message }`, where `ErrorKind` is one of `BadInput→1`, `Network→2`, `Auth→3` and `Other→4`.
+  - `CliError { kind: ErrorKind, message }`, where `ErrorKind` is one of `BadInput→1`, `Network→2`, `Auth→3`, `Key→3` and `Other→4`. `Key` (category `key_error`) is for a signing key that cannot be loaded, stored or verified; `keys check` uses it (owner decision O7).
   - `main` prints `{"error": "<category>", "message": "...", "retryable": bool}` on stderr, the `buzz` CLI's format (`crates/buzz-cli/src/error.rs` `print_error`), and exits with the mapped code (R57). The categories are `user_error`, `network_error`, `auth_error`, `key_error` and `error`.
 - **Daemon failure policy:**
   - Relay errors retry forever (section 10.5).
@@ -1194,9 +1215,10 @@ Requirements: 20.4, 21.4, 51.2, 57.
   - A panic in a spawned task is caught at its `JoinHandle` and treated as `failed`. The daemon keeps running.
 - **Logging** (`logging.rs`):
   - `tracing-subscriber` with an `EnvFilter` from `BUZZ_ROUTER_LOG`, default `info`.
-  - Human-readable to stderr, plus JSON lines to `data_dir/logs/buzz-router.log` through `tracing-appender` daily rotation, keeping 14 files.
+  - Human-readable to stderr, plus JSON lines to `data_dir/logs/buzz-router.log` through `tracing-appender` daily rotation with `max_log_files(14)`, so the 14-file limit holds for a long-running daemon, not just at startup.
   - Spans carry `bot`, `wake_id`, `event_id` and `root_id`.
   - `LogLimiter` provides the once-per-key and once-per-key-per-hour warnings for roster drift and unmanaged posts (R4.4, R51.2).
+  - Secrets never reach a log line (R59.4): agent stderr lines are logged with the wake token redacted, and webhook request errors drop the URL.
   - Budget suppressions are logged at info (R20.4, R21.4).
 
 ## 15. Build, CI and release
@@ -1213,7 +1235,7 @@ Requirements: 5.9, 58, 60, 64.2, 65.1, 66.8.
   - check out Buzz at the pinned rev;
   - `docker compose up -d postgres redis` from Buzz's `docker-compose.yml`;
   - build and run `buzz-relay` with Buzz's `.env.example` and migrations, as `just relay` does;
-  - run `BUZZ_E2E=1 cargo test -p buzz-router --test 'e2e_*' -- --test-threads=1`.
+  - run `BUZZ_E2E=1 cargo test -p buzz-router --test 'e2e_*' -- --ignored --test-threads=1`.
 
   The macOS and Windows E2E legs are covered by DA-1.
 
@@ -1324,6 +1346,17 @@ The example shows only the first two of case 16's ten steps.
 | 119 | daily budget reached suppresses a bot-caused wake (`Budget`) |
 | 120 | daily budget reached doesn't block an owner-caused wake |
 | 121 | a bot's "stop" message is not a control command |
+| 122 | a foreign bot's `p` tag naming a local bot yields `Suppress(RespondTo)` (O4) |
+| 123 | halted bots suppress a bot-caused wake (`Halted`) |
+| 124 | halted bots suppress a human-caused wake for an `anyone` bot (`Halted`) |
+| 125 | the turn cap suppresses a human-caused wake (`Cap`) |
+| 126 | the hourly budget suppresses a human-caused wake (`Budget`) |
+| 127 | the daily budget suppresses a human-caused wake (`Budget`) |
+| 128 | halted bots suppress an edit target (`Halted`) |
+| 129 | an edit whose text contains "stop" is not a control command |
+| 130 | a foreign bot replying to a local bot yields `Suppress(RespondTo)` |
+| 131 | `default_bot` is not applied to a human message |
+| 132 | the participant rule applies when the parent is not the root |
 
 ### 16.2 Engine tests (`crates/buzz-router/tests/engine_*.rs`)
 
@@ -1344,6 +1377,7 @@ Each R65 criterion has one test file:
 | `engine_max_posts.rs` | 65.7 | The 4th post returns 429. |
 | `engine_restart.rs` | 65.8 | A `running` row becomes `interrupted` and is re-queued once with owner triggers. |
 | `engine_unmanaged.rs` | 65.9 | A bot-signed event not in `posts` gets ⚠️. |
+| `engine_shutdown.rs` | section 6.9 | Uses the **real** command adapter, as `engine_stop_kill.rs` does. After a graceful shutdown, both pids are gone, the wake is `interrupted` rather than `running`, and it is re-queued as attempt 2. |
 
 Further engine tests cover:
 
@@ -1370,7 +1404,7 @@ Tests find it through `test_agent_path()` in `crates/buzz-router/tests/support/m
 
 ### 16.4 End-to-end harness (`crates/buzz-router/tests/e2e_*.rs`)
 
-The tests are skipped unless `BUZZ_E2E=1`, and they read `BUZZ_E2E_RELAY_URL`. They never use the live relay or real keys (R66.1).
+The tests are `#[ignore]`d, so a plain `cargo test` reports them as ignored rather than passed; the e2e job runs them with `--ignored` and `BUZZ_E2E=1`. They read `BUZZ_E2E_RELAY_URL`. They never use the live relay or real keys (R66.1).
 
 **Setup:**
 1. Generate four throwaway identities (owner O, bots A, B, C).
@@ -1481,6 +1515,7 @@ The requirements assumptions A1–A18 still apply. These additional points arise
 | 6.6 Dispatch and lifecycle | 19.1, 19.4, 27, 34, 35, 36, 46 |
 | 6.7 Control execution | 30, 31, 32, 33 |
 | 6.8 Publishing | 35.5, 44, 45, 46.2, 46.3, 59.3 |
+| 6.9 Shutdown | 37.1, 49 (owner decision, review finding #7) |
 | 7 Adapters | 36.5, 36.6, 37, 38, 39, 40.5–40.8 |
 | 8 HTTP API | 27.3, 28, 38.3, 38.4, 42, 43 |
 | 9 SQLite store | 18.5, 30.2, 34.3, 47 |

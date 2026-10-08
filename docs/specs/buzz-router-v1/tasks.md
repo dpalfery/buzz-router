@@ -5,16 +5,55 @@ doc-type: spec
 status: current
 component: buzz-router
 owner: dpalfery
-last-reviewed: 2026-10-05
+last-reviewed: 2026-10-07
 ---
 
 # buzz-router v1 Implementation Tasks
 
 **Phase status:** Approved
 
-**Approval:** Approved by David on 2026-10-05 ("approved"). Approve and execute: granted. The specification is Ready, and this is the build plan, written against the approved [requirements.md](requirements.md) and [design.md](design.md).
+**Approval:** Approved by David on 2026-10-05 ("approved"). Approve and execute: granted (spec marked Ready on 2026-10-05; current status is under Progress). This is the build plan, written against the approved [requirements.md](requirements.md) and [design.md](design.md).
 
 **Development mode:** test-first
+
+## Progress
+
+**Implementation status:** Tasks 1.1–8.1 landed. Two independent council reviews are done and all findings are fixed except deliberately deferred/dropped ones. Full gate green locally (fmt, clippy `-D warnings`, `cargo test --workspace --locked`, `kyber-weave docs validate .`); all 15 e2e tests pass against the local Docker Buzz relay (`scripts/e2e-relay.sh`, `ghcr.io/block/buzz:sha-f0eb557`) with `BUZZ_E2E=1 --ignored` (orchestrator-verified 2026-10-07). Closeout (8.2) is open: 3-OS CI, the release dry run and the Windows Task Scheduler crash-restart check are not yet verified.
+
+| | |
+|---|---|
+| Branch | `feat/buzz-router-v1` (pushed to origin) |
+| Pull request | [#1 (draft)](https://github.com/dpalfery/buzz-router/pull/1) |
+| Last task commit | `2e7607d` (FIX cycle2 G; 8.2 closeout recorded, still open) |
+| Tests | 670 passed, 0 failed, 15 ignored (`cargo test --workspace --locked`, macOS arm64). `clippy -D warnings` and `fmt --check` are clean. `router-core` is tokio-free. 69 conformance fixtures (70 conformance tests including registration). The 15 ignored tests are the e2e suite, which is `#[ignore]`d and runs with `BUZZ_E2E=1 ... -- --ignored` against the local relay via `scripts/e2e-relay.sh` (failing without `BUZZ_E2E=1` rather than passing silently). |
+| CI | `ci.yml` (fmt lint + 3-OS clippy/test/release-build + ubuntu tokio-free/openssl/bundled checks + ubuntu e2e + MSRV 1.88) plus Docs Gate and `release.yml` (tag builds + publish). |
+| Reviews | Two independent council reviews done (`.squad/REVIEW.md`, `.squad/REVIEW2.md`); all findings fixed except deliberately deferred/dropped ones. |
+| Not yet verified | 3-OS GitHub CI results (CI has not run on a pushed branch yet); a real tag/`workflow_dispatch` release dry run; real Windows Task Scheduler crash-restart behaviour (manual runbook check). |
+| Open item | Finding E: a channel whose backfill fails permanently makes a bot redial forever — awaits an owner decision. |
+
+| Milestone | Tasks | Status |
+|---|---|---|
+| 1. router-core and conformance | 1.1–1.11 | 11 of 11 done. |
+| 2. Relay I/O | 2.1–2.9 | 9 of 9 done. |
+| 3. Wake engine plus stop | 3.1–3.10 | 10 of 10 done. |
+| 4. State and recovery | 4.1–4.4 | 4 of 4 done. |
+| 5. Webhook adapter | 5.1–5.2 | 2 of 2 done. |
+| 6. Packaging, CI and release | 6.1–6.4 | Done except CI-run evidence (6.3, 6.4 pending a CI run). |
+| 7. End-to-end acceptance | 7.1–7.5 | Done except CI-run evidence (7.5 pending a CI run). |
+| 8. Docs and closeout | 8.1–8.2 | 8.1 done; 8.2 open (closeout status recorded 2026-10-07; archive steps pending the evidence above). |
+
+### Decided items from the owner
+
+Raised during milestone 1. All decided by David; the decisions are applied in code and spec text.
+
+- **O1, ci.yml — decided: yes.** github-devops may write `.github/workflows/ci.yml` exactly per task 1.1 criterion 6, with actions pinned by SHA like `docs-gate.yml`.
+- **O2, F5, config edge cases — decided: reject.** Config validation rejects duplicate channel ids, `max_concurrent = 0`, an empty command, and a bot named `all`, each with a clear `ConfigIssue`.
+- **O3, F6 — decided: keep the interim reading.** A bare whole-word owner name in reply `p` tags maps to every owner pubkey; recorded as a spec clarification.
+- **O4, F8 — decided: Reading 1.** A foreign bot's `p` tag naming a local bot yields `Suppress(RespondTo)`: R15.2 wins over R17.4 for foreign bots. R17.4 now says so.
+- **O5, F9 — decided: current behaviour.** Replay does not invent thread state for roots it never saw; documented.
+- **O6, keyring 4.x — decided: accept.** Accept keyring 4.2.0 plus the keyring-core pin; design §11 matches.
+- **O7, task 6.1 — decided: add it.** `ErrorKind::Key` exists (exit code 3, label `key_error`); design §14 matches. `keys check` uses it.
+- **O8, DD-19 — decided: add it.** The `~` expansion of the adapter `cwd` is part of task 3.5.
 
 ## How to work these tasks
 
@@ -111,7 +150,7 @@ Tests are written before implementation, so these public names and signatures ar
 
 ## Milestone 1: router-core and conformance (brief §17.1)
 
-- [ ] **1.1 Scaffolding and verification**
+- [x] **1.1 Scaffolding and verification**
   - **Objective:** Create the cargo workspace, crate skeletons, lints and CI skeleton. Prove the Buzz git dependencies resolve, and pin `keyring`.
   - **Files:** `Cargo.toml`, `Cargo.lock`, `clippy.toml`, `rustfmt.toml`, `crates/router-core/{Cargo.toml,src/lib.rs}`, `crates/buzz-router/{Cargo.toml,src/lib.rs,src/main.rs}`, `crates/test-agent/{Cargo.toml,src/main.rs}`, `.github/workflows/ci.yml`, `crates/router-core/tests/smoke.rs`, `crates/buzz-router/tests/smoke.rs`.
   - **Design:** §2, §3.1, §3.2, §3.3, §15.
@@ -152,11 +191,12 @@ Tests are written before implementation, so these public names and signatures ar
       - buzz-router smoke: with `keyring`'s mock credential builder installed, an `Entry` for service `buzz-router-smoke` can `set_password` and then `get_password`.
     - *RED:* there is no workspace, so `cargo test` fails with `could not find Cargo.toml`.
     - *GREEN:* both smoke tests pass locally and in the CI skeleton on all three OSes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** commits `9c932ee` (scaffold) and `a54ee98` (ci.yml skeleton, criterion 6). Local smoke tests are green; 3-OS CI green pending first CI run.
 
-- [ ] **1.2 Config types, validation and example files**
+- [x] **1.2 Config types, validation and example files**
   - **Objective:** Parse and validate `roster.toml` and `router.toml` into resolved types, collecting every issue at once. Ship placeholder example files.
   - **Files:** `crates/router-core/src/ids.rs`, `crates/router-core/src/config/{mod.rs,roster.rs,router.rs,limits.rs,validate.rs}`, `roster.example.toml`, `router.example.toml`, `crates/router-core/tests/config.rs`, `crates/router-core/tests/config_examples.rs`.
   - **Design:** §4.2, §4.3, §5.1, DD-19.
@@ -184,11 +224,12 @@ Tests are written before implementation, so these public names and signatures ar
     - *Behaviour (examples):* both example files parse and validate after every `<…>` placeholder is replaced with deterministic fake values. Neither file contains a 64-hex literal, `nsec1`, `npub1`, or a `wss://` host other than `<relay-host>`.
     - *RED:* compile error, unresolved import `router_core::config`; the example files don't exist.
     - *GREEN:* both test files pass.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** commit `49fd432`.
 
-- [ ] **1.3 Core types, thread position and author classification**
+- [x] **1.3 Core types, thread position and author classification**
   - **Objective:** Define the router-core types and `route` signature, the NIP-10 thread resolution, and author classification.
   - **Files:** `crates/router-core/src/{thread.rs,classify.rs}`, `crates/router-core/src/route/mod.rs`, `crates/router-core/tests/{thread_position.rs,classify.rs}`.
   - **Design:** §5.2, §5.3.
@@ -210,11 +251,12 @@ Tests are written before implementation, so these public names and signatures ar
       - An auth tag computed for a different agent pubkey gives `Human`. No auth tag gives `Human`.
     - *RED:* compile error, unresolved `router_core::thread::thread_position` and `router_core::classify::classify`.
     - *GREEN:* both files pass.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** commit `853e4d0`.
 
-- [ ] **1.4 Parsing: mentions, `@everyone`, control and reply mentions**
+- [x] **1.4 Parsing: mentions, `@everyone`, control and reply mentions**
   - **Objective:** Implement the parsers in §5.4, including `nprofile` decoding (the A18 resolution) and the mention extractor for reply `p` tags.
   - **Files:** `crates/router-core/src/parse/{mod.rs,text.rs,mentions.rs,everyone.rs,control.rs,nip19.rs}`, `crates/router-core/tests/{parse_mentions.rs,parse_control.rs}`.
   - **Design:** §5.4, §6.8 (reply mentions), DD-18.
@@ -239,11 +281,12 @@ Tests are written before implementation, so these public names and signatures ar
       - `"nostr:npub1… stop"` returns `Stop` with the URI stripped.
     - *RED:* compile error, unresolved module `router_core::parse`.
     - *GREEN:* both files pass.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** commit `36e9306`.
 
-- [ ] **1.5 Quiet hours and limit gates**
+- [x] **1.5 Quiet hours and limit gates**
   - **Objective:** Implement `quiet_set` (half-open, owner timezone, per-bot) and the ordered gate helper.
   - **Files:** `crates/router-core/src/quiet.rs`, `crates/router-core/src/route/gates.rs` (with `#[cfg(test)] mod tests`), `crates/router-core/tests/quiet.rs`.
   - **Design:** §5.5 (gate helper), §5.6, DD-4.
@@ -273,11 +316,12 @@ Tests are written before implementation, so these public names and signatures ar
       - Below every limit gives `None`.
     - *RED:* compile error, unresolved `router_core::quiet::quiet_set` and `route::gates::gate`.
     - *GREEN:* all pass.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** commit `4d725ac`.
 
-- [ ] **1.6 Conformance harness and owner-message routing**
+- [x] **1.6 Conformance harness and owner-message routing**
   - **Objective:** Build the fixture harness, then implement `route` for owner kind-9 messages: rules (a)–(f), the new round, and halted gating.
   - **Files:**
     - `crates/router-core/tests/conformance.rs`, `crates/router-core/tests/common/mod.rs`;
@@ -303,11 +347,12 @@ Tests are written before implementation, so these public names and signatures ar
     - *Behaviour:* each conformance case returns its brief result. **Cases 1, 2, 3, 4, 5, 6, 7, 8, 9, 31, 32, 33, 34 and 36**, plus the extras: nprofile and npub mentions wake their bot; an alias wakes its bot; `@everyone` plus `@A` wakes every covered bot with reason `Everyone`; `default_bot` applies in a thread with no participants.
     - *RED:* the positive cases fail because the placeholder `route` returns no decisions. The negative cases 2, 31, 32 and 36 may pass, and are kept as guards (group RED).
     - *GREEN:* every listed test passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** commit `e7d71f3`.
 
-- [ ] **1.7 Bot-message routing, discussions and bot rounds**
+- [x] **1.7 Bot-message routing, discussions and bot rounds**
   - **Objective:** Implement bot_message: participants, bot mentions, discussion targets, the bot round, and gates.
   - **Files:**
     - `crates/router-core/src/route/bot.rs`;
@@ -325,11 +370,12 @@ Tests are written before implementation, so these public names and signatures ar
     - *Behaviour:* **cases 10, 11, 12, 13, 14, 15, 16, 24 and 27** match the brief. Extra 103 gives one decision, with reason `BotMention`. Extra 109 gives no decision for a local bot whose `channels` list excludes the channel. Extra 119 gives `Suppress(Budget)` when the daily count is reached.
     - *RED:* the placeholder returns no decisions for bot authors, so cases 10, 11, 13, 16, 24, 27, 103 and 119 fail.
     - *GREEN:* all listed pass, and so do the 1.6 cases (no regression).
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** commit `395e000`.
 
-- [ ] **1.8 Human, foreign-bot and edit routing; status tag; halts; owner exemptions**
+- [x] **1.8 Human, foreign-bot and edit routing; status tag; halts; owner exemptions**
   - **Objective:** Implement human_message, foreign_message, owner_edit, the status-tag short-circuit, the RespondTo precedence, and the owner exemptions from quiet hours and budgets.
   - **Files:**
     - `crates/router-core/src/route/{human.rs,edit.rs}` and dispatch in `route/mod.rs`;
@@ -355,11 +401,12 @@ Tests are written before implementation, so these public names and signatures ar
       - 120: the owner isn't blocked by the daily budget.
     - *RED:* the human, foreign and edit paths are unimplemented, so cases 23, 25, 26, 29, 30, 35, 37, 101, 102, 104, 105, 110, 116 and 118 fail. Case 28 may already pass (group RED).
     - *GREEN:* all listed pass, with no regression in 1.6 or 1.7.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** commit `7938bd8`.
 
-- [ ] **1.9 Control routing (stop, resume, cancel)**
+- [x] **1.9 Control routing (stop, resume, cancel)**
   - **Objective:** Wire `parse_control` into owner_message as rule 1. Control comes only from owner kind 9.
   - **Files:**
     - `crates/router-core/src/route/owner.rs`;
@@ -375,11 +422,12 @@ Tests are written before implementation, so these public names and signatures ar
     - *Behaviour:* **cases 17, 18, 19, 20, 21 and 22** match the brief. Extra 113: `!shutdown` gives `Stop(All)`. Extra 114: `"@A @B resume"` gives `Resume({A,B})`. Extra 121: a bot posting "stop" is not control.
     - *RED:* no control is returned yet, so cases 17, 18, 19, 21, 22, 113 and 114 fail.
     - *GREEN:* all listed pass, and the whole conformance suite passes (`cargo test -p router-core --test conformance`).
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** commit `7a6806f`.
 
-- [ ] **1.10 Offline replay simulator**
+- [x] **1.10 Offline replay simulator**
   - **Objective:** Implement `Replayer` as described in §5.8.
   - **Files:** `crates/router-core/src/replay.rs`, `crates/router-core/tests/replay.rs`.
   - **Design:** §5.8.
@@ -398,11 +446,12 @@ Tests are written before implementation, so these public names and signatures ar
       - Replies resolve their parent author from earlier events.
     - *RED:* compile error, unresolved `router_core::replay::Replayer`.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** commit `546f097`.
 
-- [ ] **1.11 CLI skeleton: paths, errors, `roster check`, `route --replay`**
+- [x] **1.11 CLI skeleton: paths, errors, `roster check`, `route --replay`**
   - **Objective:** Build the clap command tree with the exact brief §13 command list, path resolution, the JSON error and exit-code mapping, and the first two working commands.
   - **Files:** `crates/buzz-router/src/main.rs`, `src/cli/{mod.rs,roster.rs,replay.rs}`, `src/paths.rs`, `src/logging.rs` (stderr init only), and `crates/buzz-router/tests/{cli_roster_check.rs,cli_replay.rs,cli_surface.rs,cli_errors.rs}`.
   - **Design:** §4.1, §12.1, §14, DD-11.
@@ -425,15 +474,16 @@ Tests are written before implementation, so these public names and signatures ar
       - **Exit codes:** each `ErrorKind` maps to its code (unit test).
     - *RED:* `cli::main` returns success and prints nothing, so the assertions fail.
     - *GREEN:* all pass on all three OSes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** commit `22dd879`. The task-reviewer audit was in progress when the run stopped on a usage limit, so it isn't confirmed.
 
 ## Milestone 2: relay I/O (brief §17.2)
 
 The SQLite store lands here, earlier than brief §17.4 places it, because ingest and the engine both use it. Recovery behaviours stay in Milestone 4.
 
-- [ ] **2.1 SQLite store: schema and repositories**
+- [x] **2.1 SQLite store: schema and repositories**
   - **Objective:** Open and migrate `state.sqlite3` with the §9.2 DDL, and provide one typed repository per table.
   - **Files:** `crates/buzz-router/src/store/{mod.rs,schema.rs,events.rs,threads.rs,wakes.rs,posts.rs,halts.rs,cursors.rs}`, `crates/buzz-router/tests/store.rs`.
   - **Design:** §9.
@@ -457,11 +507,11 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - **cursors:** get; advance never moves backwards.
     - *RED:* compile error, unresolved `buzz_router::store::Store`.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
-- [ ] **2.2 Signing keys from files**
+- [x] **2.2 Signing keys from files**
   - **Objective:** Load `file:<path>` keys with the Unix permission check. Keychain loading comes in task 6.1.
   - **Files:** `crates/buzz-router/src/keys.rs`, `crates/buzz-router/tests/keys_file.rs`.
   - **Design:** §11.
@@ -477,11 +527,11 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - A missing file gives `KeyError::Io`.
     - *RED:* compile error, unresolved `buzz_router::keys::load_key`.
     - *GREEN:* passes on all three OSes (the permission cases are `cfg(unix)`).
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
-- [ ] **2.3 Relay REST client and `RelayPort`**
+- [x] **2.3 Relay REST client and `RelayPort`**
   - **Objective:** Implement `RestClient` (NIP-98, `x-auth-tag`, retries, paging, `submit_event`) and define the `RelayPort` trait.
   - **Files:** `crates/buzz-router/src/relay/{mod.rs,rest.rs}`, `crates/buzz-router/tests/relay_rest.rs`.
   - **Design:** §10.4, §6.1 (ports).
@@ -500,11 +550,11 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - `relay_ws_to_http` maps `wss` to `https` and `ws` to `http`, and trims a trailing `/`.
     - *RED:* compile error, unresolved `buzz_router::relay::rest::RestClient`.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
-- [ ] **2.4 WebSocket connection, NIP-42 auth, publish acks and reconnect**
+- [x] **2.4 WebSocket connection, NIP-42 auth, publish acks and reconnect**
   - **Objective:** Implement one connection task per bot: authentication, publish with OK tracking, ping and pong, and the reconnect ladder.
   - **Files:** `crates/buzz-router/src/relay/{conn.rs,auth.rs}`, `crates/buzz-router/tests/relay_conn.rs`.
   - **Design:** §10.1, §10.5, §6.8 (publish transport).
@@ -521,11 +571,11 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - A Ping gets a Pong.
     - *RED:* compile error, unresolved `buzz_router::relay::conn::spawn_connection`.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
-- [ ] **2.5 Discovery, subscription, backfill and cursors**
+- [x] **2.5 Discovery, subscription, backfill and cursors**
   - **Objective:** Discover channels, subscribe per channel, backfill from the cursor before flushing buffered live events, and handle first-run cursors.
   - **Files:** `crates/buzz-router/src/relay/{discovery.rs,backfill.rs}`, connection integration in `relay/conn.rs`, `crates/buzz-router/tests/relay_backfill.rs`.
   - **Design:** §10.2, §10.3, §10.4, §6.2 (first run).
@@ -543,11 +593,11 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - **Reconnect:** discovery, subscription and backfill from `cursor − 300` run again.
     - *RED:* compile errors for the missing discovery and backfill modules; the subscription assertions fail.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
-- [ ] **2.6 Ingest pipeline and shared test support**
+- [x] **2.6 Ingest pipeline and shared test support**
   - **Objective:** Implement ingest: signature check, kind and `h` filter, dedupe, thread, edit-target and parent resolution, and thread-rebuild requests. Create `tests/support/mod.rs`.
   - **Files:** `crates/buzz-router/src/ingest.rs`, `crates/buzz-router/tests/support/mod.rs`, `crates/buzz-router/tests/ingest.rs`.
   - **Design:** §6.3 (ingest), DD-13.
@@ -568,11 +618,11 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - The parent author comes from the store, else from `FakeRelay`.
     - *RED:* compile error, unresolved `buzz_router::ingest`.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
-- [ ] **2.7 Publisher: replies, status notes, reactions, typing**
+- [x] **2.7 Publisher: replies, status notes, reactions, typing**
   - **Objective:** Build and publish every outbound event type, with the `posts` row written before sending, the REST fallback, and the halt refusal.
   - **Files:** `crates/buzz-router/src/publish.rs`, `crates/buzz-router/tests/publish.rs`.
   - **Design:** §6.8, DD-6, DD-7, DD-18.
@@ -599,11 +649,11 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - Publishing a reply for a halted bot returns an error, and nothing is sent.
     - *RED:* compile error, unresolved `buzz_router::publish::build_reply`.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
-- [ ] **2.8 `capture` command**
+- [x] **2.8 `capture` command**
   - **Objective:** Dump a channel's events as JSON Lines.
   - **Files:** `crates/buzz-router/src/cli/capture.rs`, `crates/buzz-router/tests/cli_capture.rs`.
   - **Design:** §12.1.
@@ -619,11 +669,11 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - A channel with no member bot exits 1.
     - *RED:* the command returns "not implemented", exit 4.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
-- [ ] **2.9 Relay I/O against a local Buzz relay [Docker + local Buzz relay]**
+- [x] **2.9 Relay I/O against a local Buzz relay [Docker + local Buzz relay]**
   - **Objective:** Prove the relay layer against a real local Buzz relay, as brief §17.2 asks.
   - **Files:** `crates/buzz-router/tests/e2e_support/mod.rs` (relay URL from `BUZZ_E2E_RELAY_URL`, identities, channel provisioning with `build_create_channel` and `build_add_member` over REST), `crates/buzz-router/tests/e2e_relay_io.rs`.
   - **Design:** §10, §16.4.
@@ -636,9 +686,9 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
        2. Run `docker compose up -d postgres redis`.
        3. Run `buzz-relay` the way `just relay` does, with `.env.example` and migrations.
        4. Configure relay auth to admit the four throwaway test identities, and record the settings used.
-    2. Tests are skipped unless `BUZZ_E2E=1`.
+     2. The e2e tests are `#[ignore]`d and run with `--ignored`; without `BUZZ_E2E=1` they fail with setup instructions instead of passing silently.
   - **Test contract:**
-    - *Run:* `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 cargo test -p buzz-router --test e2e_relay_io -- --test-threads=1`
+    - *Run:* `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 cargo test -p buzz-router --test e2e_relay_io -- --ignored --test-threads=1`
     - *Behaviour:*
       - Standalone NIP-42 auth succeeds, and so does owner-attested auth with a NIP-OA tag.
       - Discovery finds the provisioned channel.
@@ -648,13 +698,13 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - A reply and a reaction are published and visible through a REST query. A typing indicator gets a relay OK.
     - *RED:* the e2e test file and harness don't exist yet, so the run fails to compile. Any product defect found later is its own RED.
     - *GREEN:* passes against the local relay.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
 ## Milestone 3: wake engine plus stop (brief §17.3)
 
-- [ ] **3.1 Prompt rendering and payload model**
+- [x] **3.1 Prompt rendering and payload model**
   - **Objective:** Implement the built-in template, `render`, `reason_text`, `render_context` and `WakePayload` serialisation.
   - **Files:** `crates/router-core/src/{prompt.rs,payload.rs}`, `crates/router-core/tests/{prompt.rs,payload.rs}`.
   - **Design:** §5.7, DD-17.
@@ -672,11 +722,11 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - The payload JSON has the brief §9.3 keys. `reason` is `"reply_target"`, `round_mode` is `"discussion"`, `deadline` looks like `2026-10-05T03:20:00Z`, `turns_left_after_this` is `limit − used_after`, and `api` holds the paths.
     - *RED:* compile error, unresolved `router_core::prompt` and `router_core::payload`.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
-- [ ] **3.2 Core actor, clock, snapshot building, applying results, thread rebuild**
+- [x] **3.2 Core actor, clock, snapshot building, applying results, thread rebuild**
   - **Objective:** Implement the core actor loop, `Clock`, building the snapshot, the transactional apply of `RouteResult`, the ⏸️-once rule, budget counters, cursor advance and `RebuildThread`.
   - **Files:**
     - `crates/buzz-router/src/clock.rs`, `crates/buzz-router/src/core/{mod.rs,apply.rs}`;
@@ -699,11 +749,11 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       7. Wakes started 59 minutes and 61 minutes ago give an hourly count of 1 and a daily count of 2.
     - *RED:* compile error, unresolved `buzz_router::core::spawn_core`.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
-- [ ] **3.3 Wake queue, coalescing, debounce and scheduling**
+- [x] **3.3 Wake queue, coalescing, debounce and scheduling**
   - **Objective:** Implement the per-bot queue, coalescing, A9 attributes, `dispatch_after`, and `schedule()` with priority, FIFO and `max_concurrent`.
   - **Files:** `crates/buzz-router/src/core/queue.rs`, `crates/buzz-router/tests/{engine_debounce.rs,engine_coalesce.rs,engine_queue_order.rs}`.
   - **Design:** §6.5, DD-2.
@@ -722,11 +772,11 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - With `max_concurrent = 1` and queued Bot, Human and Owner wakes, the dispatch order is Owner, Human, Bot. Within one priority it's FIFO. With `max_concurrent = 2`, two wakes run at once.
     - *RED:* compile error, unresolved `buzz_router::core::queue`; dispatch never happens.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
-- [ ] **3.4 Dispatch, lifecycle, timers and endings**
+- [x] **3.4 Dispatch, lifecycle, timers and endings**
   - **Objective:** Implement the dispatch steps, the `Adapter` trait, payload context building, typing every 3 s, the deadline and status-note timers, and the endings table with its reactions.
   - **Files:** `crates/buzz-router/src/core/{dispatch.rs,timers.rs}`, `crates/buzz-router/src/adapter/mod.rs`, and `crates/buzz-router/tests/{engine_dispatch.rs,engine_deadline.rs,engine_status_note.rs,engine_endings.rs}`.
   - **Design:** §6.6, §7 (payload building), DD-10, DD-17.
@@ -752,14 +802,14 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - Across all scenarios, the only kind-9 events published are agent replies and status notes (R45.1).
     - *RED:* compile error, unresolved `buzz_router::adapter::Adapter`; dispatch assertions fail.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
-- [ ] **3.5 Command adapter and test agent**
+- [x] **3.5 Command adapter and test agent**
   - **Objective:** Implement `CommandAdapter` (process group, environment, prompt modes, capped stdout, stderr logging, scratch files, pid file) and the `buzz-router-test-agent` modes.
   - **Files:** `crates/buzz-router/src/adapter/command.rs`, `crates/test-agent/src/main.rs`, `crates/buzz-router/tests/adapter_command.rs`.
-  - **Design:** §7.1, DD-20, DD-21, §16.3.
+  - **Design:** §7.1, DD-19, DD-20, DD-21, §16.3.
   - **Requirements:** R36.5, R37 (all), R40.8, R59.4.
   - **Depends on:** 3.4.
   - **Agents:** `test-dev` (RED, test-agent modes); `tauri-dev` (GREEN, REFACTOR).
@@ -768,6 +818,7 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
     2. `env_remove("BUZZ_PRIVATE_KEY")` is applied last.
     3. Stdout is drained past 64 KiB.
     4. `wakes/<id>/{payload.json,prompt.txt,pid}` are mode 0600 on Unix and deleted when the wake ends.
+    5. A leading `~` in the adapter `cwd` is expanded to the operator's home directory (DD-19, owner decision O8).
   - **Test contract:**
     - *Run:* `cargo test -p buzz-router --test adapter_command`
     - *Behaviour:*
@@ -777,14 +828,15 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - **Outcomes:** `[no-reply]` and empty output give `passed`. Exit 3 with stdout gives `failed`, and nothing is posted. API mode with exit 0 and no post gives `passed`.
       - **Logging:** stderr lines appear in the captured `tracing` output.
       - **Files:** the payload file is 0600 on Unix and gone after the wake.
+      - **Home expansion:** with `cwd` set to a `~`-prefixed directory, the command runs with the expanded directory as its working directory.
       - **Pass then linger:** `api-pass-then-sleep` is killed within 5 s of the pass.
     - *RED:* compile error, unresolved `buzz_router::adapter::command::CommandAdapter`.
     - *GREEN:* passes on all three OSes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
-- [ ] **3.6 HTTP API and admin token**
+- [x] **3.6 HTTP API and admin token**
   - **Objective:** Implement the loopback and tailnet routers, token and admin auth, the `/v1/post` precedence, the error bodies, body limits and the admin-token file.
   - **Files:** `crates/buzz-router/src/api/{mod.rs,token.rs,admin.rs,error.rs,admin_token.rs}`, and `crates/buzz-router/tests/{api.rs,engine_max_posts.rs}`. Dev-dependencies: `tower = { version = "0.5", features = ["util"] }` and `http-body-util = "0.1"`.
   - **Design:** §8, DD-22.
@@ -808,11 +860,11 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - `admin_token::ensure` creates 64 hex characters with mode 0600 on Unix, and doesn't overwrite an existing file.
     - *RED:* compile error, unresolved `buzz_router::api::loopback_router`.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
-- [ ] **3.7 Control execution**
+- [x] **3.7 Control execution**
   - **Objective:** Execute stop, resume and cancel from Buzz messages and from the admin API, including halt rows, kills, queue drops, reactions and partial resume.
   - **Files:** `crates/buzz-router/src/core/control.rs`, `crates/buzz-router/tests/engine_control.rs`.
   - **Design:** §6.7, DD-15.
@@ -837,11 +889,11 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
     - *Behaviour (persistence):* halts survive reopening the store.
     - *RED:* compile error, unresolved `buzz_router::core::control`; halt assertions fail.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
-- [ ] **3.8 Stop end to end with real processes; CLI control and fallback**
+- [x] **3.8 Stop end to end with real processes; CLI control and fallback**
   - **Objective:** Prove the real process-group kill on all three OSes. Implement `stop`, `resume` and `cancel` on the CLI, with the stop fallback when the API is unreachable.
   - **Files:** `crates/buzz-router/src/cli/control.rs`, and `crates/buzz-router/tests/{engine_stop_kill.rs,cli_control.rs,cli_stop_fallback.rs}`.
   - **Design:** §6.7 (CLI fallback), §7.1, §16.2.
@@ -857,11 +909,11 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - **CLI fallback:** with no daemon, a seeded `running` wake and a real test-agent process tree whose pid is in `wakes/<id>/pid`, `stop --bot A` writes the halt row `'A'` with `set_by_event = "cli"`, kills the tree, and exits 0.
     - *RED:* the CLI control commands return "not implemented"; the kill test fails because the pid file isn't written yet, or because the processes survive.
     - *GREEN:* passes on all three OSes in CI.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
-- [ ] **3.9 Agent CLI: `post`, `pass`, `eta`**
+- [x] **3.9 Agent CLI: `post`, `pass`, `eta`**
   - **Objective:** Implement the agent-side commands that call the wake-token API.
   - **Files:** `crates/buzz-router/src/cli/agent.rs`, `crates/buzz-router/tests/cli_agent.rs`.
   - **Design:** §12.1, §14.
@@ -885,11 +937,11 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - A halted bot gives exit 4 with `"halted"` in the message.
     - *RED:* the commands return "not implemented".
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
-- [ ] **3.10 `run` wiring**
+- [x] **3.10 `run` wiring**
   - **Objective:** Wire the daemon startup (§6.2 steps 1–5 and 7): rustls provider, config, store, admin token, keys, halts, core, ingest, API listeners and relay connections.
   - **Files:** `crates/buzz-router/src/cli/run.rs`, wiring in `crates/buzz-router/src/core/mod.rs`, `crates/buzz-router/tests/cli_run.rs`.
   - **Design:** §6.2, DD-23, DD-24.
@@ -911,13 +963,14 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
         - the process exits 0 on ctrl-c or SIGTERM.
     - *RED:* `run` returns "not implemented".
     - *GREEN:* passes on all three OSes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** T3.10 commit. RED: `run` exited 4 ("not implemented") where 1 was expected, and the API never listened. `cargo test -p buzz-router --test cli_run`: 3 passed on macOS (the signal checks are Unix-only; on Windows the valid-config test kills the process). A bot whose key fails to load, or doesn't match its roster pubkey, is left out of the core's local bots and logged as unavailable; its `status` field comes with task 4.3.
 
 ## Milestone 4: state and recovery (brief §17.4)
 
-- [ ] **4.1 Startup recovery and missed messages**
+- [x] **4.1 Startup recovery and missed messages**
   - **Objective:** Implement recovery of interrupted wakes (§6.2 step 6), the rule for missed owner messages older than 24 hours (step 8), and halts loaded before connecting.
   - **Files:** recovery in `crates/buzz-router/src/core/mod.rs` and ordering in `src/cli/run.rs`; `crates/buzz-router/tests/{engine_restart.rs,engine_missed.rs}`.
   - **Design:** §6.2, DD-14, DA-2.
@@ -937,11 +990,12 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - A backfilled mention 23 hours old wakes.
     - *RED:* recovery isn't implemented, so `running` rows stay `running` and old owner messages wake.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** T4.1 commit. RED: four restart tests failed with `Running` where `Interrupted` was expected, and `engine_missed` failed to compile on the missing `DebugCounters::missed` (`E0609`). The stored-halts and 25-hour stop tests passed before any change and stay as regression guards. `cargo test -p buzz-router --test engine_restart --test engine_missed`: 8 passed. A missed message is listed only when Wake decisions were actually dropped.
 
-- [ ] **4.2 Unmanaged-post detection**
+- [x] **4.2 Unmanaged-post detection**
   - **Objective:** Flag kind-9 events signed by a local bot key that the router didn't publish, without ever flagging its own echoes.
   - **Files:** the unmanaged step in `crates/buzz-router/src/core/apply.rs`; `crates/buzz-router/tests/engine_unmanaged.rs`.
   - **Design:** §6.3 (core step 2), DD-6, DD-12.
@@ -958,11 +1012,11 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - A kind-40003 event from a bot key is not flagged.
     - *RED:* no ⚠️ is published.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
-- [ ] **4.3 `status` and `wakes`**
+- [x] **4.3 `status` and `wakes`**
   - **Objective:** Implement the status document (§12.2) behind `GET /v1/status` and `status [--json]`, and `wakes`, which reads SQLite directly.
   - **Files:** `crates/buzz-router/src/core/status.rs`, status in `src/api/admin.rs`, `src/cli/{status.rs,wakes.rs}`, and `crates/buzz-router/tests/{api_status.rs,cli_status.rs,cli_wakes.rs}`.
   - **Design:** §12.1, §12.2, DD-12.
@@ -978,11 +1032,12 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - With the daemon down, `status` gives exit 2, `network_error`, and `wakes --bot A --state queued` still lists rows from SQLite.
     - *RED:* the commands and route return "not implemented" or 501.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - **Done:** T4.3 commit. RED: `GET /v1/status` answered 501, and `status` and `wakes` exited 4 with "not implemented". `cargo test -p buzz-router --test api_status --test cli_status --test cli_wakes`: 9 passed. `bots` lists every bot in `router.toml`, unavailable ones included. `connected` means the bot's relay socket is authenticated right now. `wakes` prints one JSON line per row, oldest first, without the token hash. With no database it prints nothing. The interim not-yet-built rows of `cli_errors.rs` are gone.
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
-- [ ] **4.4 Logging: file output, rate limiting and redaction**
+- [x] **4.4 Logging: file output, rate limiting and redaction**
   - **Objective:** Complete `logging.rs`: the JSON file layer with daily rotation keeping 14 files, `BUZZ_ROUTER_LOG`, `LogLimiter`, and redaction of secrets.
   - **Files:** `crates/buzz-router/src/logging.rs`, `crates/buzz-router/tests/logging.rs`.
   - **Design:** §14, §2.
@@ -999,13 +1054,14 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - **Redaction:** after a `FakeAdapter` wake and a run with a file key, the captured logs contain neither the wake token, the test nsec, nor the admin token.
     - *RED:* no file layer exists, so `LogLimiter` is unresolved.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** T4.4 commit (logging file layer, LogLimiter, redaction). `cargo test -p buzz-router --test logging`: 7 passed. Full workspace gate green.
 
 ## Milestone 5: webhook adapter (brief §17.5)
 
-- [ ] **5.1 Webhook adapter (async and sync)**
+- [x] **5.1 Webhook adapter (async and sync)**
   - **Objective:** Implement `WebhookAdapter`: HMAC signing, async with a 10 s timeout, sync until the deadline, failure mapping, and `cancel_url`.
   - **Files:** `crates/buzz-router/src/adapter/webhook.rs`, `crates/buzz-router/tests/adapter_webhook.rs`.
   - **Design:** §7.2, DD-16.
@@ -1024,11 +1080,11 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
     - *Behaviour (cancel):* `cancel_url` receives a POST with `{"wake_id"}` and the signature headers, and its errors are logged.
     - *RED:* compile error, unresolved `buzz_router::adapter::webhook::WebhookAdapter`.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
-- [ ] **5.2 Webhook wakes through the engine and the tailnet API**
+- [x] **5.2 Webhook wakes through the engine and the tailnet API**
   - **Objective:** Select adapters per bot, use `public_url` as the payload's API URL, end async wakes at the first post or pass, and stop webhook wakes.
   - **Files:** adapter selection in `crates/buzz-router/src/core/dispatch.rs`; `crates/buzz-router/tests/engine_webhook.rs`.
   - **Design:** §6.6 (endings), §7.2, §8, A6.
@@ -1046,13 +1102,15 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
     - *Behaviour (sync):* a sync text reply is published under the reaction target. A sync wake that hits its deadline gives `timeout` and ⌛.
     - *RED:* webhook bots aren't dispatched to `WebhookAdapter`.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - **Clarifications (owner-approved):** a stop or cancel that kills a running webhook wake, from a Buzz message or the admin API, calls `cancel_url` in the background, in async and sync mode alike (`Adapter::killed`). A deadline timeout does not call it (§6.6 only cancels the HTTP call and revokes the token). Any cancellation of a sync wake drops the in-flight request, and a sync reply arriving after a halt is discarded. The CLI stop fallback never calls `cancel_url`: without the daemon there is no wake state.
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** T5.2 commit. RED was `error[E0432]` unresolved `buzz_router::core::select_adapters`. `cargo test -p buzz-router --test engine_webhook`: 6 passed. Full workspace gate green.
 
 ## Milestone 6: packaging, CI and release (brief §17.6)
 
-- [ ] **6.1 OS keychain keys and the `keys` commands**
+- [x] **6.1 OS keychain keys and the `keys` commands**
   - **Objective:** Implement `KeySource::Keychain`, `keys set` and `keys check`.
   - **Files:** `crates/buzz-router/src/keys.rs`, `crates/buzz-router/src/cli/keys.rs`, `crates/buzz-router/tests/{keys_keychain.rs,cli_keys.rs}`.
   - **Design:** §11, DD-20.
@@ -1072,11 +1130,11 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
     - *Behaviour (process):* `keys set --bot A` with an invalid nsec on stdin and an empty `--config-dir` exits 1 with a JSON error, without needing any configuration.
     - *RED:* `Keychain` returns `Unsupported`, and the commands are not implemented.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
-- [ ] **6.2 Service installation**
+- [x] **6.2 Service installation**
   - **Objective:** Render and install the per-OS service definitions through a `CommandRunner`.
   - **Files:** `crates/buzz-router/src/service/{mod.rs,macos.rs,linux.rs,windows.rs}`, `crates/buzz-router/src/cli/service.rs`, `crates/buzz-router/tests/service_defs.rs`.
   - **Design:** §13, DD-8.
@@ -1098,11 +1156,11 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
       - `status` runs the §13 query command.
     - *RED:* compile error, unresolved `buzz_router::service`.
     - *GREEN:* passes on all three OSes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
-- [ ] **6.3 CI: full matrix and build checks** *(no-test task)*
+- [x] **6.3 CI: full matrix and build checks** *(no-test task)*
   - **Objective:** Extend `ci.yml` to the full matrix and add the build-property checks.
   - **Files:** `.github/workflows/ci.yml`.
   - **Design:** §15.
@@ -1117,10 +1175,10 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
     5. The router-core tokio guard is kept (R5.9).
     6. `docs-gate.yml` is unchanged.
   - **Replacement validation:** a green workflow run on all three OSes, with the run URL recorded in the evidence.
-  - [ ] Workflow updated
-  - [ ] Green run recorded
+  - [x] Workflow updated
+  - [ ] Green run recorded (pending CI on the merged branch; all new checks validated locally)
 
-- [ ] **6.4 Release workflow** *(no-test task)*
+- [x] **6.4 Release workflow** *(no-test task)*
   - **Objective:** Build and attach the five release binaries.
   - **Files:** `.github/workflows/release.yml`.
   - **Design:** §15.
@@ -1133,14 +1191,14 @@ The SQLite store lands here, earlier than brief §17.4 places it, because ingest
     3. Packages `buzz-router-<version>-<target>.tar.gz`, or `.zip` for Windows.
     4. Uploads with `gh release upload`.
   - **Replacement validation:** a `workflow_dispatch` dry run producing the five artifacts. Record the run URL and the artifact names.
-  - [ ] Workflow written
-  - [ ] Dry run recorded
+  - [x] Workflow written
+  - [ ] Dry run recorded (needs a `workflow_dispatch` run after merge; packaging logic dry-run locally)
 
 ## Milestone 7: end-to-end acceptance (brief §15.3)
 
 All tasks here are **[Docker + local Buzz relay]**. They are acceptance verification of behaviour already delivered. RED is the scenario test not yet existing or failing. A product defect found here is fixed under its own RED → GREEN, with the failing scenario as the RED evidence.
 
-- [ ] **7.1 E2E harness [Docker + local Buzz relay]**
+- [x] **7.1 E2E harness [Docker + local Buzz relay]**
   - **Objective:** Extend `tests/e2e_support/mod.rs` into the full §16.4 harness.
     - Per-run throwaway identities O, A, B and C. Channel provisioning.
     - `roster.toml` and `router.toml` written to temporary dirs, with `file:` keys at mode 0600 and command adapters running `buzz-router-test-agent echo --delay N`.
@@ -1152,15 +1210,15 @@ All tasks here are **[Docker + local Buzz relay]**. They are acceptance verifica
   - **Agents:** `test-dev`; `tauri-dev` for product fixes.
   - **Acceptance criteria:** Never touches the live relay or real keys. The relay setup is as in task 2.9.
   - **Test contract:**
-    - *Run:* `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 cargo test -p buzz-router --test e2e_harness_smoke -- --test-threads=1`
+    - *Run:* `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 cargo test -p buzz-router --test e2e_harness_smoke -- --ignored --test-threads=1`
     - *Behaviour:* the router starts; `status` shows all three bots connected; O posting "@A ping" gets 👀 and a reply from A.
     - *RED:* the harness module doesn't exist yet.
     - *GREEN:* passes.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
-- [ ] **7.2 E1 and E4 [Docker + local Buzz relay]**
+- [x] **7.2 E1 and E4 [Docker + local Buzz relay]**
   - **Objective:** Automate acceptance scenarios E1 and E4.
   - **Files:** `crates/buzz-router/tests/{e2e_thread_reply.rs,e2e_status_note.rs}`.
   - **Design:** §16.4.
@@ -1169,17 +1227,17 @@ All tasks here are **[Docker + local Buzz relay]**. They are acceptance verifica
   - **Agents:** `test-dev`; `tauri-dev` for product fixes.
   - **Acceptance criteria:** Each scenario test asserts exactly its brief pass condition.
   - **Test contract:**
-    - *Run:* `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=… cargo test -p buzz-router --test e2e_thread_reply --test e2e_status_note -- --test-threads=1`
+    - *Run:* `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=… cargo test -p buzz-router --test e2e_thread_reply --test e2e_status_note -- --ignored --test-threads=1`
     - *Behaviour:*
       - **E1:** O posts "@A", A replies, then O replies untagged in the thread. A is woken and replies.
       - **E4:** O posts "@A" with a 60 s task. 👀 appears immediately, one status note at about 20 s, and the final reply is threaded under O's message.
     - *RED:* the scenario files don't exist yet.
     - *GREEN:* both pass.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
 
-- [ ] **7.3 E2 and E3 [Docker + local Buzz relay]**
+- [x] **7.3 E2 and E3 [Docker + local Buzz relay]**
   - **Objective:** Automate acceptance scenarios E2 and E3.
   - **Files:** `crates/buzz-router/tests/{e2e_everyone.rs,e2e_stop.rs}`.
   - **Design:** §16.4.
@@ -1188,17 +1246,18 @@ All tasks here are **[Docker + local Buzz relay]**. They are acceptance verifica
   - **Agents:** `test-dev`; `tauri-dev` for product fixes.
   - **Acceptance criteria:** Each scenario test asserts exactly its brief pass condition.
   - **Test contract:**
-    - *Run:* `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=… cargo test -p buzz-router --test e2e_everyone --test e2e_stop -- --test-threads=1`
+    - *Run:* `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=… cargo test -p buzz-router --test e2e_everyone --test e2e_stop -- --ignored --test-threads=1`
     - *Behaviour:*
       - **E2:** "@everyone" gets 👀 from A, B and C within 5 s; no bot exceeds 4 wakes; the thread goes quiet.
       - **E3:** "stop" during E2 leaves no agent process within 5 s; 🛑 from each bot; nothing is published afterwards; the halt survives a router restart; "resume" brings ▶️ and normal routing.
     - *RED:* the scenario files don't exist yet.
     - *GREEN:* both pass.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** T7.3 commit. RED: the scenario files did not exist. `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 cargo test -p buzz-router --test e2e_everyone --test e2e_stop -- --test-threads=1`: both pass against the local Docker relay under the relay lock (E2 in 86 s, E3 in 52 s). No product defects found; no product fix needed.
 
-- [ ] **7.4 E5 and E6 [Docker + local Buzz relay]**
+- [x] **7.4 E5 and E6 [Docker + local Buzz relay]**
   - **Objective:** Automate acceptance scenarios E5 and E6.
   - **Files:** `crates/buzz-router/tests/{e2e_crash_recovery.rs,e2e_unmanaged.rs}`.
   - **Design:** §16.4.
@@ -1207,17 +1266,18 @@ All tasks here are **[Docker + local Buzz relay]**. They are acceptance verifica
   - **Agents:** `test-dev`; `tauri-dev` for product fixes.
   - **Acceptance criteria:** Each scenario test asserts exactly its brief pass condition.
   - **Test contract:**
-    - *Run:* `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=… cargo test -p buzz-router --test e2e_crash_recovery --test e2e_unmanaged -- --test-threads=1`
+    - *Run:* `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=… cargo test -p buzz-router --test e2e_crash_recovery --test e2e_unmanaged -- --ignored --test-threads=1`
     - *Behaviour:*
       - **E5:** kill the router child mid-wake, O posts while it's down, then restart. The interrupted wake is re-run exactly once, the message sent during the downtime is answered, and there are no duplicate replies.
       - **E6:** publishing directly with bot A's key gets ⚠️ on that post, and `status` shows `unmanaged_posts: 1`.
     - *RED:* the scenario files don't exist yet.
     - *GREEN:* both pass.
-  - [ ] RED evidence recorded
-  - [ ] GREEN
-  - [ ] REFACTOR
+  - [x] RED evidence recorded
+  - [x] GREEN
+  - [x] REFACTOR
+  - **Done:** T7.4 commit. RED: the scenario files did not exist. `BUZZ_E2E=1 BUZZ_E2E_RELAY_URL=ws://127.0.0.1:3000 cargo test -p buzz-router --test e2e_crash_recovery --test e2e_unmanaged -- --test-threads=1`: both pass against the local Docker relay under the relay lock (E5 in 46 s, E6 in 1 s). No product defects found; no product fix needed.
 
-- [ ] **7.5 E7: the E2E CI job [Docker + local Buzz relay]** *(no-test task)*
+- [x] **7.5 E7: the E2E CI job [Docker + local Buzz relay]** *(no-test task)*
   - **Objective:** Add the `e2e` job to `ci.yml` and make the whole matrix green (E7).
   - **Files:** `.github/workflows/ci.yml`.
   - **Design:** §15, DA-1.
@@ -1229,15 +1289,15 @@ All tasks here are **[Docker + local Buzz relay]**. They are acceptance verifica
        1. checks out Buzz at the pinned rev;
        2. runs `docker compose up -d postgres redis`;
        3. builds and runs `buzz-relay` with `.env.example` and migrations, plus the test-identity auth settings recorded in task 2.9;
-       4. runs `BUZZ_E2E=1 cargo test -p buzz-router --test 'e2e_*' -- --test-threads=1`.
+       4. runs `BUZZ_E2E=1 cargo test -p buzz-router --test 'e2e_*' -- --ignored --test-threads=1`.
     2. Native macOS and Windows E2E legs are added with `continue-on-error: true` until David decides DA-1.
   - **Replacement validation:** a green `e2e` job plus a green three-OS test matrix on the same commit, with the run URL recorded.
-  - [ ] Workflow updated
+  - [x] Workflow updated
   - [ ] Green run recorded
 
 ## Milestone 8: documentation and closeout
 
-- [ ] **8.1 Cutover runbook** *(no-test task)*
+- [x] **8.1 Cutover runbook** *(no-test task)*
   - **Objective:** Write the operator cutover runbook.
   - **Files:** `docs/runbooks/buzz-router-cutover.md`, with frontmatter `doc-type: runbook`, `status: draft`, `component: buzz-router` and `owner: dpalfery`. Link it from the documentation index if the `kyber-weave-docs` skill requires that.
   - **Design:** §17.
@@ -1252,8 +1312,8 @@ All tasks here are **[Docker + local Buzz relay]**. They are acceptance verifica
   - **Replacement validation:**
     - `kyber-weave docs validate .` reports 0 critical, 0 error, 0 warning and 0 info;
     - a checklist in the review notes mapping each R63 criterion and R29.8 to its runbook section.
-  - [ ] Runbook written
-  - [ ] Validation recorded
+  - [x] Runbook written
+  - [x] Validation recorded
 
 - [ ] **8.2 Specification closeout**
   - **Objective:** Retire the specification after delivery, following the product-owner closeout procedure.
@@ -1270,8 +1330,14 @@ All tasks here are **[Docker + local Buzz relay]**. They are acceptance verifica
   - **Requirements:** all, R1–R66 (verification).
   - **Depends on:** every task above, and the final council approval.
   - **Agent:** `docs-dev`, assigned through the conductor.
-  - **Replacement validation:** the closeout digest `STATUS: ARCHIVED`, with the requirements verified (66 of 66) and a clean validation run.
-  - [ ] Closeout complete
+   - **Replacement validation:** the closeout digest `STATUS: ARCHIVED`, with the requirements verified (66 of 66) and a clean validation run.
+   - [ ] Closeout complete
+   - **Closeout status (2026-10-07, T8.2 — task stays open):**
+     - Tasks 1.1–8.1 landed. Two independent council reviews done; all findings fixed except deliberately deferred/dropped ones (`.squad/REVIEW.md`, `.squad/REVIEW2.md`).
+     - Full gate green locally as orchestrator-verified today: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `kyber-weave docs validate .` (0 findings); all 15 e2e tests pass with `BUZZ_E2E=1 --ignored` against the local Docker Buzz relay (`scripts/e2e-relay.sh`, `ghcr.io/block/buzz:sha-f0eb557`).
+     - NOT yet verified: 3-OS GitHub CI results (CI has not run on a pushed branch yet); a real tag/`workflow_dispatch` release dry run; real Windows Task Scheduler crash-restart behaviour (manual runbook check).
+     - Open item: finding E — a channel whose backfill fails permanently makes a bot redial forever — awaits an owner decision.
+     - Steps 3–5 (canonical-docs migration, README archive move, folder archive) are therefore NOT done; the specification stays Active and this task stays open.
 
 ## Coverage
 

@@ -1,0 +1,18 @@
+{
+  "case": 126,
+  "requirement": "20.2",
+  "title": "Human H mentions A, which answers anyone, while A has used its hourly wakes",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {"A": "anyone"}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {"A": {"hour": 20, "day": 20}},
+  "event": {"label": "h1", "author": "H", "kind": 9, "content": "@A hi"},
+  "expect": {
+    "control": null,
+    "decisions": [{"suppress": {"bot": "A", "why": "budget"}}],
+    "thread_update": {}
+  }
+}

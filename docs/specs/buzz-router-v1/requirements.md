@@ -260,7 +260,7 @@ The source is the [design brief](brief.md) that David approved on 2026-10-04. It
 17.1. Before extracting text or npub mentions, `route` SHALL remove code regions with `buzz_sdk::mentions::strip_code_regions` and remove every line that starts with `>`. (brief §6.1)
 17.2. `route` SHALL find text mentions with `extract_at_mentions_with_known(content, names)`, where `names` holds every roster bot name and alias. Matching SHALL be case-insensitive, whole-word and longest name first. Each match SHALL map to its roster bot, and tokens that aren't a roster name or alias SHALL be ignored. (brief §4.1, §6.1)
 17.3. `route` SHALL find `nostr:npub1…` and `nostr:nprofile1…` URIs and map them to roster bots by pubkey, using `extract_nostr_uris` for npub URIs. (brief §6.1; assumption A18)
-17.4. `route` SHALL count a `p` tag that names a roster bot as a mention only when the author is `owner` or `human`, and SHALL ignore any `p` tag that carries the author's own pubkey. (brief §2, §6.1)
+17.4. `route` SHALL count a `p` tag that names a roster bot as a mention only when the author is `owner` or `human`, and SHALL ignore any `p` tag that carries the author's own pubkey. A `foreign_bot` author's `p` tag that names a roster bot also counts as a mention, but only to return `Suppress(RespondTo)` for that bot: Requirement 15.2 wins over this criterion for foreign bots (owner decision O4, Reading 1). (brief §2, §6.1)
 17.5. `route` SHALL NOT count an `@name` or URI that appears only inside a code region or a `>`-quoted line. (brief §6.1)
 17.6. CONFORM: test case 32. WHEN O posts ```` ```@A``` ````, so the mention is only inside code, THEN `route` SHALL return: nobody. (brief §15.1)
 17.7. CONFORM: test case 33. WHEN O posts a message whose first line is "> @everyone said…" and whose next line is "what do you think @B" THEN `route` SHALL return: Wake B only. (brief §15.1)
@@ -554,7 +554,7 @@ The source is the [design brief](brief.md) that David approved on 2026-10-04. It
 44.1. The router SHALL publish each reply as a kind-9 event built with `buzz_sdk::builders::build_message` and signed with the bot's key. (brief §3, §9.6)
 44.2. The reply's `h` tag SHALL be the wake's channel. (brief §2, §9.6)
 44.3. The reply's thread root SHALL be the wake's thread root, and its parent SHALL be the latest owner trigger, else the latest trigger (for an edit trigger, the edited message, 16.7). WHEN the parent is the root THEN the reply SHALL carry the single tag `["e", <root>, "", "reply"]`. Otherwise it SHALL carry `["e", <root>, "", "root"]` and `["e", <parent>, "", "reply"]`. (brief §2, §9.6)
-44.4. The reply SHALL carry a `p` tag for each roster bot or owner that its text @mentions, resolved with the parser of Requirement 17, so that mentions render. (brief §9.6)
+44.4. The reply SHALL carry a `p` tag for each roster bot or owner that its text @mentions, resolved with the parser of Requirement 17, so that mentions render. In addition, WHEN the reply text names the owner as a bare whole word (without `@`), in any ASCII case, THEN the reply SHALL carry a `p` tag for every owner pubkey (owner decision O3: the T1.4 interim reading of finding F6, recorded as the spec). (brief §9.6)
 44.5. WHERE the bot has an `auth_tag`, the reply SHALL carry it. (brief §9.6)
 44.6. The reply SHALL carry the tag `["buzz-router", "<version>", "reply"]`. (brief §9.6)
 44.7. The router SHALL record every kind-9 event it publishes, replies and status notes alike, in `posts`, so that its own events are never counted as unmanaged, even when the relay echoes one before publishing completes. (brief §9.6, §10, §12)
@@ -793,10 +793,14 @@ Each assumption fills a gap the brief leaves open. Criteria that rely on one cit
 - **A3. Validation rules the brief doesn't state.** Configuration is rejected when:
   - `version` isn't 1;
   - two bots share a name, alias or pubkey (names and aliases compared case-insensitively);
+  - a bot is named `all`, in any ASCII case (`all` is the halt scope covering every bot; owner decision O2);
+  - two channels share an id (owner decision O2);
   - a pubkey is both an owner key and a bot key;
   - `default_bot` doesn't name a roster bot;
   - an async webhook bot is configured but `public_url` or `tailnet_bind` is empty;
   - `api_bind` isn't a loopback address, or `tailnet_bind` is a wildcard address (`0.0.0.0` or `::`), which enforces "never binds to a public interface";
+  - `max_concurrent` is 0 (owner decision O2);
+  - a command adapter's `command` is empty (owner decision O2);
   - on Unix, a `file:` key is readable or writable by group or others (it must be 0600).
 - **A4. Clearing halts that are stored one row per scope.** A bot is halted while a row exists for `'all'` or for its name. Resume(all) deletes every row. Resume naming bots while an `'all'` row exists replaces that row with one row per other roster bot and then deletes the named bots' rows, so only the named bots resume.
 - **A5. How far a Buzz stop reaches.** A router acts on a stop, resume or cancel message only if one of its local bots receives it, which requires that bot to be a member of the channel. A bot whose router sees no copy of the message isn't halted. That is consistent with the brief's "a bot whose router is down won't react", but it also applies to routers that have no bot in that channel. The CLI and admin API (Requirement 33) remain the per-machine fallback.

@@ -1,0 +1,17 @@
+{
+  "case": 23,
+  "requirement": "30.6",
+  "title": "Every bot is halted and O mentions A",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": true, "bots": []},
+  "wake_counts": {},
+  "event": {"label": "o1", "author": "O", "kind": 9, "content": "@A hi", "p": ["A"]},
+  "expect": {
+    "control": null,
+    "decisions": [{"suppress": {"bot": "A", "why": "halted"}}]
+  }
+}

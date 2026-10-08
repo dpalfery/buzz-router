@@ -1,0 +1,22 @@
+{
+  "case": 119,
+  "requirement": "21.2",
+  "title": "B mentions A in a Direct round of a discussion thread while A has used its daily wakes",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {"A": {"hour": 5, "day": 100}},
+  "thread": {"root": "t", "participants": ["A", "B", "C"], "discussion": true,
+             "round_id": "o2", "round_mode": "direct", "turns_used": {}},
+  "event": {"label": "b1", "author": "B", "kind": 9, "content": "@A can you take another look?",
+            "reply": {"root": "t", "parent": "t"}},
+  "expect": {
+    "control": null,
+    "decisions": [{"suppress": {"bot": "A", "why": "budget"}}],
+    "thread_update": {"add_participants": ["A", "B"]},
+    "wake_mode": "direct"
+  }
+}

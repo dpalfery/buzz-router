@@ -1,0 +1,18 @@
+{
+  "case": 2,
+  "requirement": "10.4",
+  "title": "Owner posts an untagged top-level message",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "event": {"label": "o1", "author": "O", "kind": 9, "content": "hey"},
+  "expect": {
+    "control": null,
+    "decisions": [],
+    "thread_update": {}
+  }
+}

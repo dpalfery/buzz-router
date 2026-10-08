@@ -1,0 +1,21 @@
+{
+  "case": 125,
+  "requirement": "19.2",
+  "title": "Human H mentions A, which answers anyone, after A used all 4 turns",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {"A": "anyone"}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "thread": {"root": "t", "participants": ["A"], "discussion": false,
+             "round_id": "t", "round_mode": "direct", "turns_used": {"A": 4}},
+  "event": {"label": "h1", "author": "H", "kind": 9, "content": "@A hi",
+            "reply": {"root": "t", "parent": "t"}},
+  "expect": {
+    "control": null,
+    "decisions": [{"suppress": {"bot": "A", "why": "cap"}}],
+    "thread_update": {}
+  }
+}

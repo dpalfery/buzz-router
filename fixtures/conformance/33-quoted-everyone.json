@@ -1,0 +1,19 @@
+{
+  "case": 33,
+  "requirement": "17.7",
+  "title": "Owner quotes @everyone on a > line and mentions B on the next line",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "event": {"label": "o1", "author": "O", "kind": 9, "content": "> @everyone said…\nwhat do you think @B"},
+  "expect": {
+    "control": null,
+    "decisions": [{"wake": {"bot": "B", "reason": "mention", "priority": "owner", "debounce": false}}],
+    "thread_update": {"create": {"root": "o1"}, "add_participants": ["B"], "new_round": {"round_id": "o1", "mode": "direct"}},
+    "wake_mode": "direct"
+  }
+}

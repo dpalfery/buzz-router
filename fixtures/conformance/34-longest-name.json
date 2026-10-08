@@ -1,0 +1,19 @@
+{
+  "case": 34,
+  "requirement": "17.8",
+  "title": "Owner mentions dp-grok-bot while sf-GrokBot is also on the roster",
+  "roster": {"owner": "O", "bots": ["dp-grok-bot", "sf-GrokBot"], "respond_to": {}, "default_bot": null},
+  "local_bots": ["dp-grok-bot", "sf-GrokBot"],
+  "members": ["dp-grok-bot", "sf-GrokBot"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "event": {"label": "o1", "author": "O", "kind": 9, "content": "@dp-grok-bot hi"},
+  "expect": {
+    "control": null,
+    "decisions": [{"wake": {"bot": "dp-grok-bot", "reason": "mention", "priority": "owner", "debounce": false}}],
+    "thread_update": {"create": {"root": "o1"}, "add_participants": ["dp-grok-bot"], "new_round": {"round_id": "o1", "mode": "direct"}},
+    "wake_mode": "direct"
+  }
+}

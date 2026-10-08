@@ -1,0 +1,18 @@
+{
+  "case": 29,
+  "requirement": "14.6",
+  "title": "Human H mentions A, which answers only the owner",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {"A": "owner-only"}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "event": {"label": "h1", "author": "H", "kind": 9, "content": "@A hi"},
+  "expect": {
+    "control": null,
+    "decisions": [{"suppress": {"bot": "A", "why": "respond_to"}}],
+    "thread_update": {}
+  }
+}

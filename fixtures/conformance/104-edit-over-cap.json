@@ -1,0 +1,22 @@
+{
+  "case": 104,
+  "requirement": "16.3",
+  "title": "O edits a message in a Discussion thread to add a p tag for B, who has used all 4 turns",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "thread": {"root": "t", "participants": ["A", "B", "C"], "discussion": true,
+             "round_id": "t", "round_mode": "discussion", "turns_used": {"B": 4}},
+  "edit_target": {"message": "t"},
+  "event": {"label": "e1", "author": "O", "kind": 40003, "content": "what do you think?", "p": ["B"]},
+  "expect": {
+    "control": null,
+    "decisions": [{"suppress": {"bot": "B", "why": "cap"}}],
+    "thread_update": {"add_participants": ["B"]},
+    "wake_mode": "direct"
+  }
+}

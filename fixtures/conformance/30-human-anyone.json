@@ -1,0 +1,18 @@
+{
+  "case": 30,
+  "requirement": "14.7",
+  "title": "Human H mentions A, which answers anyone",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {"A": "anyone"}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "event": {"label": "h1", "author": "H", "kind": 9, "content": "@A hi"},
+  "expect": {
+    "control": null,
+    "decisions": [{"wake": {"bot": "A", "reason": "mention", "priority": "human", "debounce": false}}],
+    "thread_update": {}
+  }
+}

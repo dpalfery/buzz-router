@@ -1,0 +1,18 @@
+{
+  "case": 131,
+  "requirement": "10.3",
+  "title": "Human H posts an untagged top-level message and the channel has a default bot",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {}, "default_bot": "A"},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "event": {"label": "h1", "author": "H", "kind": 9, "content": "hey"},
+  "expect": {
+    "control": null,
+    "decisions": [],
+    "thread_update": {}
+  }
+}

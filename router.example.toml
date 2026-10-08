@@ -1,0 +1,38 @@
+# router.toml: per machine.
+#
+# Copy this file to router.toml in the config directory, then replace every <placeholder> with
+# your own value. Every placeholder below must go: the router rejects the file until it does.
+# Bot keys never go in this file: "keychain" reads them from the OS keychain.
+
+relay_url = "wss://<relay-host>"
+api_bind = "127.0.0.1:47821"   # loopback API for agents and the CLI (always on); must be a loopback address
+tailnet_bind = "<tailscale-ip>:47821"   # this machine's Tailscale IP and port, for remote agents; "" turns it off
+public_url = "http://<machine-name>.<tailnet-name>.ts.net:47821"   # MagicDNS name sent to async webhook agents
+roster_path = "roster.toml"    # relative to the config dir
+
+# An async webhook bot needs both tailnet_bind and public_url above.
+[[bots]]
+name = "dp-grok-bot"           # must exist in the roster
+key = "keychain"               # OS keychain entry "buzz-router/<bot-name>", or "file:<path>"
+auth_tag = ""                  # optional NIP-OA tag JSON, as with BUZZ_AUTH_TAG
+max_concurrent = 1
+
+[bots.adapter]
+type = "webhook"
+url = "https://<routine-endpoint>"
+secret_env = "DP_GROK_WEBHOOK_SECRET"  # HMAC secret, read from this env var
+mode = "async"                         # async = agent calls back; sync = reply in HTTP response
+cancel_url = ""                        # optional, best-effort cancel
+
+[[bots]]
+name = "dp-kyber-bot"
+key = "keychain"
+
+[bots.adapter]
+type = "command"
+command = ["claude", "-p", "--output-format", "text"]
+cwd = "~/git/personal/kyber-weave"
+env = {}
+prompt_mode = "stdin"          # stdin | file (path passed in BUZZ_ROUTER_PROMPT_FILE)
+reply_mode = "stdout"          # stdout = router posts what the command prints; api = agent calls `buzz-router post`
+prompt_template = ""           # optional path; empty = built-in template (section 9.4)

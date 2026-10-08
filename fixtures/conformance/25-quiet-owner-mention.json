@@ -1,0 +1,17 @@
+{
+  "case": 25,
+  "requirement": "22.8",
+  "title": "O mentions A during quiet hours",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-06T02:00:00Z",
+  "quiet": ["A", "B", "C"],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "event": {"label": "o1", "author": "O", "kind": 9, "content": "@A hi", "p": ["A"]},
+  "expect": {
+    "control": null,
+    "decisions": [{"wake": {"bot": "A", "reason": "mention", "priority": "owner", "debounce": false}}]
+  }
+}

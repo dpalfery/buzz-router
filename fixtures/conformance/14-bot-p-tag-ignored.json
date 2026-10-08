@@ -1,0 +1,22 @@
+{
+  "case": 14,
+  "requirement": "11.7",
+  "title": "A posts in a Direct round with a p tag for B and no @B in the text",
+  "roster": {"owner": "O", "bots": ["A", "B", "C"], "respond_to": {}, "default_bot": null},
+  "local_bots": ["A", "B", "C"],
+  "members": ["A", "B", "C"],
+  "now": "2026-10-05T15:00:00Z",
+  "quiet": [],
+  "halts": {"all": false, "bots": []},
+  "wake_counts": {},
+  "thread": {"root": "t", "participants": ["A"], "discussion": false,
+             "round_id": "t", "round_mode": "direct", "turns_used": {"A": 1}},
+  "event": {"label": "a1", "author": "A", "kind": 9, "content": "Over to you when you are ready.",
+            "reply": {"root": "t", "parent": "t"}, "p": ["B"]},
+  "expect": {
+    "control": null,
+    "decisions": [],
+    "thread_update": {"add_participants": ["A"]},
+    "wake_mode": "direct"
+  }
+}
