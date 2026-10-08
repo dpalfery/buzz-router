@@ -15,6 +15,7 @@ checked by `kyber-weave docs validate` and `kyber-weave docs drift`.
 
 | Directory | Holds |
 |---|---|
+| [guides/](guides/getting-started.md) | Getting started and installation |
 | [system/](system/architecture.md) | System architecture |
 | [standards/](standards/README.md) | Coding standards, one per technology |
 | [plans/](plans/README.md) | Sequenced implementation work |

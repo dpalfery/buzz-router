@@ -150,3 +150,79 @@ jobs:
 
       - name: Check with Rust 1.88
         run: cargo +1.88 check --workspace --locked
+
+  # Installs a freshly built binary through the real installers, against a local
+  # fake release laid out like a GitHub release. Catches installer breakage before
+  # a release is cut, on all three operating systems.
+  installers:
+    name: Installer (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Shellcheck and version-script self-test
+        if: runner.os == 'Linux'
+        run: |
+          shellcheck scripts/*.sh
+          bash scripts/next-release-version.sh --self-test
+
+      - name: Build
+        run: cargo build --locked -p buzz-router --bin buzz-router
+
+      - name: Install through install.sh
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          version="$(target/debug/buzz-router --version | awk '{print $2}')"
+          fake="$RUNNER_TEMP/fake"
+          mkdir -p "$fake/v$version"
+          tar -czf "$fake/v$version/buzz-router-$version-${{ matrix.target }}.tar.gz" -C target/debug buzz-router
+          (cd "$fake/v$version" && { sha256sum ./*.tar.gz 2>/dev/null || shasum -a 256 ./*.tar.gz; } | sed 's|\./||' > SHA256SUMS.txt)
+          BUZZ_ROUTER_RELEASE_BASE="file://$fake" sh scripts/install.sh --version "$version" --install-dir "$RUNNER_TEMP/bin"
+          test "$("$RUNNER_TEMP/bin/buzz-router" --version)" = "buzz-router $version"
+          # A corrupted archive must be refused and must leave nothing behind.
+          echo corrupt >> "$fake/v$version/buzz-router-$version-${{ matrix.target }}.tar.gz"
+          if BUZZ_ROUTER_RELEASE_BASE="file://$fake" sh scripts/install.sh --version "$version" --install-dir "$RUNNER_TEMP/bin2"; then
+            echo "installer accepted a corrupted archive" >&2
+            exit 1
+          fi
+          test ! -e "$RUNNER_TEMP/bin2/buzz-router"
+
+      - name: Install through install.ps1
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = ((& target/debug/buzz-router.exe --version) -split ' ')[1]
+          $fake = Join-Path $env:RUNNER_TEMP 'fake'
+          $dir = Join-Path $fake "v$version"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $zip = "buzz-router-$version-${{ matrix.target }}.zip"
+          Compress-Archive -Path target/debug/buzz-router.exe -DestinationPath (Join-Path $dir $zip)
+          $hash = (Get-FileHash -Algorithm SHA256 (Join-Path $dir $zip)).Hash.ToLower()
+          "$hash  $zip" | Set-Content -Path (Join-Path $dir 'SHA256SUMS.txt')
+          $env:BUZZ_ROUTER_RELEASE_BASE = $fake
+          $env:BUZZ_ROUTER_VERSION = $version
+          $env:BUZZ_ROUTER_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'bin'
+          ./scripts/install.ps1
+          $got = & (Join-Path $env:BUZZ_ROUTER_INSTALL_DIR 'buzz-router.exe') --version
+          if ($got -ne "buzz-router $version") { throw "unexpected version output: $got" }
+          # A corrupted archive must be refused and must leave nothing behind.
+          Add-Content -Path (Join-Path $dir $zip) -Value 'corrupt'
+          $env:BUZZ_ROUTER_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'bin2'
+          $refused = $false
+          try { ./scripts/install.ps1 } catch { $refused = $true }
+          if (-not $refused) { throw 'installer accepted a corrupted archive' }
+          if (Test-Path (Join-Path $env:BUZZ_ROUTER_INSTALL_DIR 'buzz-router.exe')) { throw 'a corrupted install left a binary behind' }
